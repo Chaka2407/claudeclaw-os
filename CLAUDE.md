@@ -139,7 +139,7 @@ node "$PROJECT_ROOT/dist/mission-cli.js" result <task-id>         # get a task's
 node "$PROJECT_ROOT/dist/mission-cli.js" cancel <task-id>         # cancel a queued task
 ```
 
-Available agents: main, research, comms, content, ops. Use `--priority 10` for high priority, `--priority 0` for low (default is 5).
+Available agents: main, research, comms, content, ops, vault. Use `--priority 10` for high priority, `--priority 0` for low (default is 5).
 
 ## Sending Files via Telegram
 

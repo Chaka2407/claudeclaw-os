@@ -22,6 +22,7 @@ import {
   pauseScheduledTask,
   resumeScheduledTask,
 } from './db.js';
+import { DEFAULT_TIMEZONE } from './config.js';
 import { computeNextRun } from './scheduler.js';
 
 initDatabase();
@@ -31,17 +32,26 @@ const agentFlagIdx = process.argv.indexOf('--agent');
 const cliAgentId = agentFlagIdx !== -1
   ? process.argv[agentFlagIdx + 1] ?? 'main'
   : process.env.CLAUDECLAW_AGENT_ID ?? 'main';
-// Remove --agent and its value from rest args (only filter when flag is present)
-const cleanedArgv = agentFlagIdx !== -1
-  ? process.argv.filter((_, i) => i !== agentFlagIdx && i !== agentFlagIdx + 1)
+// Parse --timezone flag, default to America/New_York (EST/EDT)
+const tzFlagIdx = process.argv.indexOf('--timezone');
+const cliTimezone = tzFlagIdx !== -1
+  ? process.argv[tzFlagIdx + 1] ?? DEFAULT_TIMEZONE
+  : DEFAULT_TIMEZONE;
+// Remove --agent and --timezone and their values from rest args
+const flagIndices = new Set<number>();
+if (agentFlagIdx !== -1) { flagIndices.add(agentFlagIdx); flagIndices.add(agentFlagIdx + 1); }
+if (tzFlagIdx !== -1) { flagIndices.add(tzFlagIdx); flagIndices.add(tzFlagIdx + 1); }
+const cleanedArgv = flagIndices.size > 0
+  ? process.argv.filter((_, i) => !flagIndices.has(i))
   : [...process.argv];
 const [, , command, ...rest] = cleanedArgv;
 
-function formatDate(unix: number | null): string {
+function formatDate(unix: number | null, tz = DEFAULT_TIMEZONE): string {
   if (!unix) return 'never';
   return new Date(unix * 1000).toLocaleString('en-US', {
     month: 'short', day: 'numeric',
     hour: 'numeric', minute: '2-digit', hour12: true,
+    timeZone: tz,
   });
 }
 
@@ -58,7 +68,7 @@ switch (command) {
 
     let nextRun: number;
     try {
-      nextRun = computeNextRun(cron);
+      nextRun = computeNextRun(cron, cliTimezone);
     } catch {
       console.error(`Invalid cron expression: "${cron}"`);
       console.error('Examples: "0 9 * * 1" (Mon 9am)  "0 8 * * *" (daily 8am)  "0 */4 * * *" (every 4h)');
@@ -66,12 +76,13 @@ switch (command) {
     }
 
     const id = randomBytes(4).toString('hex');
-    createScheduledTask(id, prompt, cron, nextRun, cliAgentId);
+    createScheduledTask(id, prompt, cron, nextRun, cliAgentId, cliTimezone);
 
     console.log(`Task created: ${id}`);
     console.log(`Agent:        ${cliAgentId}`);
     console.log(`Prompt:       ${prompt}`);
     console.log(`Schedule:     ${cron}`);
+    console.log(`Timezone:     ${cliTimezone}`);
     console.log(`Next run:     ${formatDate(nextRun)}`);
     break;
   }
@@ -84,12 +95,14 @@ switch (command) {
     }
     console.log(`${tasks.length} scheduled task${tasks.length === 1 ? '' : 's'}:\n`);
     for (const t of tasks) {
+      const tz = t.timezone || DEFAULT_TIMEZONE;
       const status = t.status === 'paused' ? ' [PAUSED]' : '';
       console.log(`${t.id}${status}`);
       console.log(`  Prompt:   ${t.prompt}`);
       console.log(`  Schedule: ${t.schedule}`);
-      console.log(`  Next run: ${formatDate(t.next_run)}`);
-      console.log(`  Last run: ${formatDate(t.last_run)}`);
+      console.log(`  Timezone: ${tz}`);
+      console.log(`  Next run: ${formatDate(t.next_run, tz)}`);
+      console.log(`  Last run: ${formatDate(t.last_run, tz)}`);
       console.log();
     }
     break;

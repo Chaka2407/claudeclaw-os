@@ -12,6 +12,7 @@ interface ScheduledTask {
   schedule: string;
   next_run: number;
   agent_id: string;
+  timezone: string;
 }
 
 interface AgentLite { id: string; name: string }
@@ -31,10 +32,25 @@ const PRESETS: Array<{ label: string; cron: string }> = [
   { label: 'Every 4 hours', cron: '0 */4 * * *' },
 ];
 
+const TIMEZONE_OPTIONS = [
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'America/Toronto',
+  'Europe/London',
+  'Europe/Berlin',
+  'Asia/Dubai',
+  'Asia/Tokyo',
+  'Australia/Sydney',
+  'UTC',
+];
+
 export function EditTaskModal({ open, task, onClose, onSaved }: Props) {
   const [prompt, setPrompt] = useState('');
   const [schedule, setSchedule] = useState('');
   const [agentId, setAgentId] = useState('');
+  const [timezone, setTimezone] = useState('America/New_York');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const agentsFetch = useFetch<{ agents: AgentLite[] }>(open ? '/api/agents' : null);
@@ -44,11 +60,12 @@ export function EditTaskModal({ open, task, onClose, onSaved }: Props) {
     setPrompt(task.prompt);
     setSchedule(task.schedule);
     setAgentId(task.agent_id);
+    setTimezone(task.timezone || 'America/New_York');
     setErr(null);
   }, [task?.id]);
 
   const cronPreview = useMemo(() => describeCron(schedule), [schedule]);
-  const dirty = task ? (prompt !== task.prompt || schedule !== task.schedule || agentId !== task.agent_id) : false;
+  const dirty = task ? (prompt !== task.prompt || schedule !== task.schedule || agentId !== task.agent_id || timezone !== (task.timezone || 'America/New_York')) : false;
 
   async function save() {
     if (!task) return;
@@ -59,6 +76,7 @@ export function EditTaskModal({ open, task, onClose, onSaved }: Props) {
       if (prompt !== task.prompt) patch.prompt = prompt;
       if (schedule !== task.schedule) patch.schedule = schedule;
       if (agentId !== task.agent_id) patch.agent_id = agentId;
+      if (timezone !== (task.timezone || 'America/New_York')) patch.timezone = timezone;
       await apiPatch(`/api/tasks/${task.id}`, patch);
       pushToast({ tone: 'success', title: 'Task updated' });
       onSaved();
@@ -141,21 +159,37 @@ export function EditTaskModal({ open, task, onClose, onSaved }: Props) {
           </div>
         </div>
 
-        <div>
-          <label class="block text-[10.5px] uppercase tracking-wider text-[var(--color-text-faint)] mb-1.5">
-            Agent
-          </label>
-          <select
-            value={agentId}
-            onInput={(e) => setAgentId((e.target as HTMLSelectElement).value)}
-            class="w-full px-3 py-2 rounded bg-[var(--color-bg)] border border-[var(--color-border)] focus:border-[var(--color-accent)] focus:outline-none text-[12.5px] text-[var(--color-text)]"
-          >
-            {agentsFetch.data?.agents
-              ? agentsFetch.data.agents.map((a) => (
-                  <option key={a.id} value={a.id}>@{a.id} {a.name && a.name !== a.id ? `· ${a.name}` : ''}</option>
-                ))
-              : <option value={agentId}>@{agentId}</option>}
-          </select>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[10.5px] uppercase tracking-wider text-[var(--color-text-faint)] mb-1.5">
+              Agent
+            </label>
+            <select
+              value={agentId}
+              onInput={(e) => setAgentId((e.target as HTMLSelectElement).value)}
+              class="w-full px-3 py-2 rounded bg-[var(--color-bg)] border border-[var(--color-border)] focus:border-[var(--color-accent)] focus:outline-none text-[12.5px] text-[var(--color-text)]"
+            >
+              {agentsFetch.data?.agents
+                ? agentsFetch.data.agents.map((a) => (
+                    <option key={a.id} value={a.id}>@{a.id} {a.name && a.name !== a.id ? `· ${a.name}` : ''}</option>
+                  ))
+                : <option value={agentId}>@{agentId}</option>}
+            </select>
+          </div>
+          <div>
+            <label class="block text-[10.5px] uppercase tracking-wider text-[var(--color-text-faint)] mb-1.5">
+              Timezone
+            </label>
+            <select
+              value={timezone}
+              onInput={(e) => setTimezone((e.target as HTMLSelectElement).value)}
+              class="w-full px-3 py-2 rounded bg-[var(--color-bg)] border border-[var(--color-border)] focus:border-[var(--color-accent)] focus:outline-none text-[12.5px] text-[var(--color-text)]"
+            >
+              {TIMEZONE_OPTIONS.map((tz) => (
+                <option key={tz} value={tz}>{tz.replace(/_/g, ' ')}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {err && (

@@ -1,6 +1,6 @@
 import { CronExpressionParser } from 'cron-parser';
 
-import { AGENT_ID, ALLOWED_CHAT_ID, agentMcpAllowlist } from './config.js';
+import { AGENT_ID, ALLOWED_CHAT_ID, DEFAULT_TIMEZONE, agentMcpAllowlist } from './config.js';
 import {
   getDueTasks,
   getSession,
@@ -74,7 +74,7 @@ async function runDueTasks(): Promise<void> {
 
     // Compute next occurrence BEFORE executing so we can lock the task
     // in the DB immediately, preventing re-fire on subsequent ticks.
-    const nextRun = computeNextRun(task.schedule);
+    const nextRun = computeNextRun(task.schedule, task.timezone || DEFAULT_TIMEZONE);
     runningTaskIds.add(task.id);
     markTaskRunning(task.id, nextRun);
 
@@ -219,7 +219,7 @@ async function runDueMissionTasks(): Promise<void> {
   });
 }
 
-export function computeNextRun(cronExpression: string): number {
-  const interval = CronExpressionParser.parse(cronExpression);
+export function computeNextRun(cronExpression: string, timezone = DEFAULT_TIMEZONE): number {
+  const interval = CronExpressionParser.parse(cronExpression, { tz: timezone });
   return Math.floor(interval.next().getTime() / 1000);
 }

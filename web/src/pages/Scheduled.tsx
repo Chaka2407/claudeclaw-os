@@ -25,6 +25,7 @@ interface ScheduledTask {
   agent_id: string;
   started_at: number | null;
   last_status: 'success' | 'failed' | 'timeout' | null;
+  timezone: string;
 }
 
 type ViewMode = 'cards' | 'list';

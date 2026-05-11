@@ -37,6 +37,7 @@ const envConfig = readEnvFile([
   'WARROOM_ENABLED',
   'WARROOM_PORT',
   'STREAM_STRATEGY',
+  'CLAUDECLAW_TIMEZONE',
 ]);
 
 // ── Multi-agent support ──────────────────────────────────────────────
@@ -83,6 +84,9 @@ export const TELEGRAM_BOT_TOKEN =
 // Only respond to this Telegram chat ID. Set this after getting your ID via /chatid.
 export const ALLOWED_CHAT_ID =
   process.env.ALLOWED_CHAT_ID || envConfig.ALLOWED_CHAT_ID || '';
+
+export const DEFAULT_TIMEZONE =
+  process.env.CLAUDECLAW_TIMEZONE || envConfig.CLAUDECLAW_TIMEZONE || 'UTC';
 
 export const WHATSAPP_ENABLED =
   (process.env.WHATSAPP_ENABLED || envConfig.WHATSAPP_ENABLED || '').toLowerCase() === 'true';

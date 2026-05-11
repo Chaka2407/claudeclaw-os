@@ -39,6 +39,12 @@ export interface AgentConfig {
   botTokenEnv: string;
   botToken: string;
   model?: string;
+  /** Override the working directory for this agent. When set, the Claude
+   *  SDK runs with this path as CWD, loading its CLAUDE.md and
+   *  .claude/skills/ from there instead of the default agents/{id}/ dir.
+   *  Useful for agents that operate inside an external project (e.g. an
+   *  Obsidian vault with its own skill set). */
+  cwd?: string;
   mcpServers?: string[];
   /** Per-agent war-room tool allowlist. Tokens are SDK tool names
    *  ("Bash", "Write") or "mcp:<name>" entries to opt an MCP server in.
@@ -100,6 +106,12 @@ export function loadAgentConfig(agentId: string): AgentConfig {
   const description = (raw['description'] as string) ?? '';
   const botTokenEnv = raw['telegram_bot_token_env'] as string;
   const model = raw['model'] as string | undefined;
+  const cwd = raw['cwd'] as string | undefined;
+  if (cwd && !fs.existsSync(cwd)) {
+    // eslint-disable-next-line no-console
+    console.warn(`[${agentId}] WARNING: cwd path does not exist: ${cwd}`);
+    console.warn(`[${agentId}] Update cwd in agent.yaml to your local path.`);
+  }
 
   if (!name || !botTokenEnv) {
     throw new Error(`Agent config ${configPath} must have 'name' and 'telegram_bot_token_env'`);
@@ -142,6 +154,7 @@ export function loadAgentConfig(agentId: string): AgentConfig {
     botTokenEnv,
     botToken,
     model,
+    cwd,
     mcpServers,
     warroomTools,
     obsidian,

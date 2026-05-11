@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
-import { DB_ENCRYPTION_KEY, STORE_DIR } from './config.js';
+import { DB_ENCRYPTION_KEY, DEFAULT_TIMEZONE, STORE_DIR } from './config.js';
 import { cosineSimilarity } from './embeddings.js';
 import { logger } from './logger.js';
 
@@ -77,7 +77,8 @@ function createSchema(database: Database.Database): void {
       last_run    INTEGER,
       last_result TEXT,
       status      TEXT NOT NULL DEFAULT 'active',
-      created_at  INTEGER NOT NULL
+      created_at  INTEGER NOT NULL,
+      timezone    TEXT NOT NULL DEFAULT 'UTC'
     );
 
     CREATE INDEX IF NOT EXISTS idx_tasks_next_run ON scheduled_tasks(status, next_run);
@@ -510,6 +511,10 @@ function runMigrations(database: Database.Database): void {
   }
   if (!taskColNames.includes('last_status')) {
     database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN last_status TEXT`);
+  }
+  if (!taskColNames.includes('timezone')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC'`);
+    logger.info('Migration: added timezone column to scheduled_tasks');
   }
 
   // ── Memory V2 migration ──────────────────────────────────────────────
@@ -1233,6 +1238,7 @@ export interface ScheduledTask {
   agent_id: string;
   started_at: number | null;
   last_status: 'success' | 'failed' | 'timeout' | null;
+  timezone: string;
 }
 
 export function createScheduledTask(
@@ -1241,12 +1247,13 @@ export function createScheduledTask(
   schedule: string,
   nextRun: number,
   agentId = 'main',
+  timezone = DEFAULT_TIMEZONE,
 ): void {
   const now = Math.floor(Date.now() / 1000);
   db.prepare(
-    `INSERT INTO scheduled_tasks (id, prompt, schedule, next_run, status, created_at, agent_id)
-     VALUES (?, ?, ?, ?, 'active', ?, ?)`,
-  ).run(id, prompt, schedule, nextRun, now, agentId);
+    `INSERT INTO scheduled_tasks (id, prompt, schedule, next_run, status, created_at, agent_id, timezone)
+     VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`,
+  ).run(id, prompt, schedule, nextRun, now, agentId, timezone);
 }
 
 export function getDueTasks(agentId = 'main'): ScheduledTask[] {
@@ -1318,7 +1325,7 @@ export function deleteScheduledTask(id: string): void {
  */
 export function updateScheduledTask(
   id: string,
-  patch: { prompt?: string; schedule?: string; nextRun?: number; agentId?: string },
+  patch: { prompt?: string; schedule?: string; nextRun?: number; agentId?: string; timezone?: string },
 ): void {
   const sets: string[] = [];
   const vals: any[] = [];
@@ -1326,6 +1333,7 @@ export function updateScheduledTask(
   if (patch.schedule !== undefined) { sets.push('schedule = ?'); vals.push(patch.schedule); }
   if (patch.nextRun !== undefined) { sets.push('next_run = ?'); vals.push(patch.nextRun); }
   if (patch.agentId !== undefined) { sets.push('agent_id = ?'); vals.push(patch.agentId); }
+  if (patch.timezone !== undefined) { sets.push('timezone = ?'); vals.push(patch.timezone); }
   if (sets.length === 0) return;
   vals.push(id);
   db.prepare(`UPDATE scheduled_tasks SET ${sets.join(', ')} WHERE id = ?`).run(...vals);

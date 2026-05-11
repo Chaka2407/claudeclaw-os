@@ -18,6 +18,12 @@ telegram_bot_token_env: MYAGENT_BOT_TOKEN
 # Users can override per-chat with /model in Telegram.
 model: claude-sonnet-4-6
 
+# Override working directory (optional).
+# When set, the Claude SDK runs with this path as CWD, loading CLAUDE.md
+# and .claude/skills/ from there instead of agents/<id>/. Useful for agents
+# that operate inside an external project (e.g. an Obsidian vault).
+# cwd: /path/to/your/project
+
 # Obsidian integration (optional).
 # Assign folders from your vault so this agent auto-loads relevant context.
 # obsidian:

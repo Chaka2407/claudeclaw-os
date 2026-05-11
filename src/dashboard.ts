@@ -5,7 +5,7 @@ import { serve } from '@hono/node-server';
 
 import fs from 'fs';
 import path from 'path';
-import { AGENT_ID, ALLOWED_CHAT_ID, DASHBOARD_PORT, DASHBOARD_TOKEN, DASHBOARD_URL, PROJECT_ROOT, STORE_DIR, WHATSAPP_ENABLED, SLACK_USER_TOKEN, CONTEXT_LIMIT, agentDefaultModel, CLAUDECLAW_CONFIG } from './config.js';
+import { AGENT_ID, ALLOWED_CHAT_ID, DASHBOARD_PORT, DASHBOARD_TOKEN, DASHBOARD_URL, DEFAULT_TIMEZONE, PROJECT_ROOT, STORE_DIR, WHATSAPP_ENABLED, SLACK_USER_TOKEN, CONTEXT_LIMIT, agentDefaultModel, CLAUDECLAW_CONFIG } from './config.js';
 import crypto from 'crypto';
 import {
   getAllScheduledTasks,
@@ -1471,25 +1471,38 @@ export function buildDashboardApp(botApi?: Api<RawApi>): Hono {
       prompt?: string;
       schedule?: string;
       agent_id?: string;
+      timezone?: string;
     };
     const all = getAllScheduledTasks();
     const existing = all.find((t) => t.id === id);
     if (!existing) return c.json({ ok: false, error: 'task not found' }, 404);
 
-    const patch: { prompt?: string; schedule?: string; nextRun?: number; agentId?: string } = {};
+    const patch: { prompt?: string; schedule?: string; nextRun?: number; agentId?: string; timezone?: string } = {};
     if (typeof body.prompt === 'string') {
       const trimmed = body.prompt.trim();
       if (!trimmed) return c.json({ ok: false, error: 'prompt cannot be empty' }, 400);
       patch.prompt = trimmed;
     }
+    // Resolve timezone: explicit body value > existing task value > default
+    const effectiveTz = (typeof body.timezone === 'string' && body.timezone.trim())
+      ? body.timezone.trim()
+      : (existing as any).timezone || DEFAULT_TIMEZONE;
+    if (typeof body.timezone === 'string' && body.timezone.trim()) {
+      patch.timezone = body.timezone.trim();
+    }
     if (typeof body.schedule === 'string' && body.schedule.trim() !== existing.schedule) {
       const cron = body.schedule.trim();
       try {
-        patch.nextRun = computeNextRun(cron);
+        patch.nextRun = computeNextRun(cron, effectiveTz);
         patch.schedule = cron;
       } catch (err: any) {
         return c.json({ ok: false, error: 'invalid cron: ' + (err?.message || String(err)) }, 400);
       }
+    } else if (patch.timezone) {
+      // Timezone changed but schedule didn't - recompute next_run with new tz
+      try {
+        patch.nextRun = computeNextRun(existing.schedule, effectiveTz);
+      } catch { /* keep existing next_run */ }
     }
     if (typeof body.agent_id === 'string') {
       const agentId = body.agent_id.trim();
