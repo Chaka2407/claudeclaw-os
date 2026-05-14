@@ -17,7 +17,17 @@
      - The wa_messages, wa_outbox, wa_message_map, and slack_messages tables have
        a 3-day auto-purge policy enforced in runDecaySweep(). Do not disable this.
      - If any database file or store/ content is ever accidentally staged, remove it
-       immediately with git rm --cached and add to .gitignore. -->
+       immediately with git rm --cached and add to .gitignore.
+
+     AGENT CONFIG — LIVE FILES LOCATION:
+     - Agent configs live in CLAUDECLAW_CONFIG (set in .env, default ~/.claudeclaw).
+     - The lookup order is: ~/.claudeclaw/agents/<id>/ FIRST, then repo agents/<id>/.
+     - When editing an agent's CLAUDE.md or agent.yaml, ALWAYS edit the copy in
+       ~/.claudeclaw/agents/<id>/, NOT the repo copy. The repo versions are templates.
+     - To check which path an agent actually reads:
+       ls ~/.claudeclaw/agents/<id>/CLAUDE.md  (if this exists, it wins)
+     - The repo copies (agents/*/CLAUDE.md, agents/*/agent.yaml) are gitignored and
+       serve only as fallback/examples. -->
 
 You are [YOUR ASSISTANT NAME]'s personal AI assistant, accessible via Telegram. You run as a persistent service on their Mac or Linux machine.
 

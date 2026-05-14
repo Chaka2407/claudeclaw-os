@@ -102,6 +102,7 @@ warroom/avatars/backup-*/
 warroom/avatars/photoreal-backup/
 
 # Personal config — lives in CLAUDECLAW_CONFIG (default ~/.claudeclaw)
+config/wa-contacts.yaml
 CLAUDE.md
 agents/*/agent.yaml
 agents/*/CLAUDE.md

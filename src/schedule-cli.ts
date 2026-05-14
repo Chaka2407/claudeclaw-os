@@ -6,10 +6,15 @@
  *
  * Usage:
  *   node dist/schedule-cli.js create "prompt text" "0 9 * * 1"
+ *   node dist/schedule-cli.js create --pre-check 'bash cmd' "prompt" "cron"
+ *   node dist/schedule-cli.js update <id> --pre-check 'bash cmd'
  *   node dist/schedule-cli.js list
  *   node dist/schedule-cli.js delete <id>
  *   node dist/schedule-cli.js pause <id>
  *   node dist/schedule-cli.js resume <id>
+ *
+ * --pre-check: a bash command run before the LLM. If it exits non-zero or
+ *              produces no output, the agent call is skipped for that firing.
  */
 
 import { randomBytes } from 'crypto';
@@ -18,6 +23,7 @@ import {
   initDatabase,
   createScheduledTask,
   getAllScheduledTasks,
+  updateScheduledTask,
   deleteScheduledTask,
   pauseScheduledTask,
   resumeScheduledTask,
@@ -37,10 +43,14 @@ const tzFlagIdx = process.argv.indexOf('--timezone');
 const cliTimezone = tzFlagIdx !== -1
   ? process.argv[tzFlagIdx + 1] ?? DEFAULT_TIMEZONE
   : DEFAULT_TIMEZONE;
-// Remove --agent and --timezone and their values from rest args
+// Parse --pre-check flag (optional bash command to gate LLM invocation)
+const preCheckFlagIdx = process.argv.indexOf('--pre-check');
+const cliPreCheck = preCheckFlagIdx !== -1 ? process.argv[preCheckFlagIdx + 1] : undefined;
+// Remove all named flags and their values from positional args
 const flagIndices = new Set<number>();
 if (agentFlagIdx !== -1) { flagIndices.add(agentFlagIdx); flagIndices.add(agentFlagIdx + 1); }
 if (tzFlagIdx !== -1) { flagIndices.add(tzFlagIdx); flagIndices.add(tzFlagIdx + 1); }
+if (preCheckFlagIdx !== -1) { flagIndices.add(preCheckFlagIdx); flagIndices.add(preCheckFlagIdx + 1); }
 const cleanedArgv = flagIndices.size > 0
   ? process.argv.filter((_, i) => !flagIndices.has(i))
   : [...process.argv];
@@ -76,7 +86,7 @@ switch (command) {
     }
 
     const id = randomBytes(4).toString('hex');
-    createScheduledTask(id, prompt, cron, nextRun, cliAgentId, cliTimezone);
+    createScheduledTask(id, prompt, cron, nextRun, cliAgentId, cliTimezone, cliPreCheck);
 
     console.log(`Task created: ${id}`);
     console.log(`Agent:        ${cliAgentId}`);
@@ -84,6 +94,7 @@ switch (command) {
     console.log(`Schedule:     ${cron}`);
     console.log(`Timezone:     ${cliTimezone}`);
     console.log(`Next run:     ${formatDate(nextRun)}`);
+    if (cliPreCheck) console.log(`Pre-check:    ${cliPreCheck}`);
     break;
   }
 
@@ -99,10 +110,11 @@ switch (command) {
       const status = t.status === 'paused' ? ' [PAUSED]' : '';
       console.log(`${t.id}${status}`);
       console.log(`  Prompt:   ${t.prompt}`);
-      console.log(`  Schedule: ${t.schedule}`);
-      console.log(`  Timezone: ${tz}`);
-      console.log(`  Next run: ${formatDate(t.next_run, tz)}`);
-      console.log(`  Last run: ${formatDate(t.last_run, tz)}`);
+      console.log(`  Schedule:  ${t.schedule}`);
+      console.log(`  Timezone:  ${tz}`);
+      console.log(`  Next run:  ${formatDate(t.next_run, tz)}`);
+      console.log(`  Last run:  ${formatDate(t.last_run, tz)}`);
+      if (t.pre_check) console.log(`  Pre-check: ${t.pre_check}`);
       console.log();
     }
     break;
@@ -132,7 +144,33 @@ switch (command) {
     break;
   }
 
+  case 'update': {
+    const id = rest[0];
+    if (!id) {
+      console.error('Usage: schedule-cli update <id> [--pre-check <cmd>] [--prompt <text>] [--schedule <cron>]');
+      process.exit(1);
+    }
+    const patch: Parameters<typeof updateScheduledTask>[1] = {};
+    if (cliPreCheck !== undefined) patch.preCheck = cliPreCheck;
+    // Allow clearing pre-check with --pre-check ""
+    const promptFlagIdx = process.argv.indexOf('--prompt');
+    if (promptFlagIdx !== -1) patch.prompt = process.argv[promptFlagIdx + 1];
+    const scheduleFlagIdx = process.argv.indexOf('--schedule');
+    if (scheduleFlagIdx !== -1) {
+      patch.schedule = process.argv[scheduleFlagIdx + 1];
+      patch.nextRun = computeNextRun(patch.schedule, cliTimezone);
+    }
+    if (Object.keys(patch).length === 0) {
+      console.error('Nothing to update. Use --pre-check, --prompt, or --schedule.');
+      process.exit(1);
+    }
+    updateScheduledTask(id, patch);
+    console.log(`Updated task: ${id}`);
+    if ('preCheck' in patch) console.log(`Pre-check: ${patch.preCheck ?? '(cleared)'}`);
+    break;
+  }
+
   default:
-    console.error('Commands: create | list | delete | pause | resume');
+    console.error('Commands: create | list | update | delete | pause | resume');
     process.exit(1);
 }

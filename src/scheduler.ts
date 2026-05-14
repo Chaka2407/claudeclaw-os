@@ -1,3 +1,5 @@
+import { spawnSync } from 'child_process';
+
 import { CronExpressionParser } from 'cron-parser';
 
 import { AGENT_ID, ALLOWED_CHAT_ID, DEFAULT_TIMEZONE, agentMcpAllowlist } from './config.js';
@@ -85,12 +87,23 @@ async function runDueTasks(): Promise<void> {
     // two Claude processes from hitting the same session simultaneously.
     const chatId = ALLOWED_CHAT_ID || 'scheduler';
     messageQueue.enqueue(chatId, async () => {
+      // Pre-check: run a cheap shell command before spinning up the LLM.
+      // If it exits non-zero or produces no output, skip this firing entirely.
+      if (task.pre_check) {
+        const result = spawnSync('bash', ['-c', task.pre_check], { encoding: 'utf8' });
+        const hasOutput = result.status === 0 && result.stdout.trim().length > 0;
+        if (!hasOutput) {
+          updateTaskAfterRun(task.id, nextRun, '', 'success');
+          runningTaskIds.delete(task.id);
+          logger.debug({ taskId: task.id }, 'Task pre-check returned nothing — skipping agent call');
+          return;
+        }
+      }
+
       const abortController = new AbortController();
       const timeout = setTimeout(() => abortController.abort(), TASK_TIMEOUT_MS);
 
       try {
-        await sender(`Scheduled task running: "${task.prompt.slice(0, 80)}${task.prompt.length > 80 ? '...' : ''}"`);
-
         // Run as a fresh agent call (no session — scheduled tasks are autonomous)
         const result = await runAgent(task.prompt, undefined, () => {}, undefined, undefined, abortController, undefined, agentMcpAllowlist);
         clearTimeout(timeout);
@@ -103,18 +116,27 @@ async function runDueTasks(): Promise<void> {
         }
 
         const text = result.text?.trim() || 'Task completed with no output.';
-        for (const chunk of splitMessage(formatForTelegram(text))) {
-          await sender(chunk);
+
+        // If the agent signals [SILENT], skip sending to Telegram but still
+        // log to DB. This lets polling tasks stay quiet when nothing happened.
+        const isSilent = text.startsWith('[SILENT]');
+
+        if (!isSilent) {
+          for (const chunk of splitMessage(formatForTelegram(text))) {
+            await sender(chunk);
+          }
+        } else {
+          logger.info({ taskId: task.id }, 'Task output suppressed ([SILENT])');
         }
 
         // Inject task output into the active chat session so user replies have context
-        if (ALLOWED_CHAT_ID) {
+        if (ALLOWED_CHAT_ID && !isSilent) {
           const activeSession = getSession(ALLOWED_CHAT_ID, schedulerAgentId);
           logConversationTurn(ALLOWED_CHAT_ID, 'user', `[Scheduled task]: ${task.prompt}`, activeSession ?? undefined, schedulerAgentId);
           logConversationTurn(ALLOWED_CHAT_ID, 'assistant', text, activeSession ?? undefined, schedulerAgentId);
         }
 
-        updateTaskAfterRun(task.id, nextRun, text, 'success');
+        updateTaskAfterRun(task.id, nextRun, isSilent ? '' : text, 'success');
 
         logger.info({ taskId: task.id, nextRun }, 'Task complete, next run scheduled');
       } catch (err) {

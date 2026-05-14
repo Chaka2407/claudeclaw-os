@@ -516,6 +516,10 @@ function runMigrations(database: Database.Database): void {
     database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC'`);
     logger.info('Migration: added timezone column to scheduled_tasks');
   }
+  if (!taskColNames.includes('pre_check')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN pre_check TEXT`);
+    logger.info('Migration: added pre_check column to scheduled_tasks');
+  }
 
   // ── Memory V2 migration ──────────────────────────────────────────────
   // Detect old schema (has 'sector' column but no 'importance') and migrate.
@@ -1239,6 +1243,7 @@ export interface ScheduledTask {
   started_at: number | null;
   last_status: 'success' | 'failed' | 'timeout' | null;
   timezone: string;
+  pre_check: string | null;
 }
 
 export function createScheduledTask(
@@ -1248,12 +1253,13 @@ export function createScheduledTask(
   nextRun: number,
   agentId = 'main',
   timezone = DEFAULT_TIMEZONE,
+  preCheck?: string,
 ): void {
   const now = Math.floor(Date.now() / 1000);
   db.prepare(
-    `INSERT INTO scheduled_tasks (id, prompt, schedule, next_run, status, created_at, agent_id, timezone)
-     VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`,
-  ).run(id, prompt, schedule, nextRun, now, agentId, timezone);
+    `INSERT INTO scheduled_tasks (id, prompt, schedule, next_run, status, created_at, agent_id, timezone, pre_check)
+     VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)`,
+  ).run(id, prompt, schedule, nextRun, now, agentId, timezone, preCheck ?? null);
 }
 
 export function getDueTasks(agentId = 'main'): ScheduledTask[] {
@@ -1325,7 +1331,7 @@ export function deleteScheduledTask(id: string): void {
  */
 export function updateScheduledTask(
   id: string,
-  patch: { prompt?: string; schedule?: string; nextRun?: number; agentId?: string; timezone?: string },
+  patch: { prompt?: string; schedule?: string; nextRun?: number; agentId?: string; timezone?: string; preCheck?: string | null },
 ): void {
   const sets: string[] = [];
   const vals: any[] = [];
@@ -1334,6 +1340,7 @@ export function updateScheduledTask(
   if (patch.nextRun !== undefined) { sets.push('next_run = ?'); vals.push(patch.nextRun); }
   if (patch.agentId !== undefined) { sets.push('agent_id = ?'); vals.push(patch.agentId); }
   if (patch.timezone !== undefined) { sets.push('timezone = ?'); vals.push(patch.timezone); }
+  if ('preCheck' in patch) { sets.push('pre_check = ?'); vals.push(patch.preCheck ?? null); }
   if (sets.length === 0) return;
   vals.push(id);
   db.prepare(`UPDATE scheduled_tasks SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
