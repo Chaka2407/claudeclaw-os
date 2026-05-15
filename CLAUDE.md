@@ -175,6 +175,53 @@ Here's the quarterly report.
 Let me know if you need any changes.
 ```
 
+## Google Workspace CLI (`gws`)
+
+The `gws` CLI is installed globally and authenticated. It is the preferred way to interact with Gmail, Calendar, Drive, Sheets, Tasks, Docs, Slides, Chat, Forms, People/Contacts, YouTube, and Google Analytics. Prefer it over MCP tools, web scraping, or generic API calls.
+
+**Auth state:**
+- Credentials encrypted at `~/.config/gws/credentials.enc` (keyring-unlocked)
+- 33 scopes granted under GCP project `claude-code-gg-cli`
+- Refresh token is long-lived — no re-auth needed unless scopes change
+
+**Invocation shape:**
+```bash
+gws <service> <resource> [sub-resource] <method> [flags]
+# Common flags:
+#   --params '<JSON>'   query/URL parameters
+#   --json   '<JSON>'   request body for POST/PATCH/PUT
+#   --format json|table|yaml|csv
+#   --page-all          auto-paginate (NDJSON, one page per line)
+#   --dry-run           validate without sending
+```
+
+**Services available:** drive, sheets, gmail, calendar, docs, slides, tasks, people, chat, forms, keep, meet, admin-reports, classroom, modelarmor, workflow, script, plus YouTube and Analytics via raw scope.
+
+**Helper subcommands** (prefixed with `+`) wrap common flows:
+- `gws gmail +send`, `+reply`, `+triage`, `+read`, `+watch`
+- `gws calendar +...` (run `gws calendar --help` for the list)
+
+**Discoverability:**
+```bash
+gws --help                       # top-level services
+gws gmail --help                 # service-level commands and helpers
+gws schema gmail.users.messages.list   # exact request schema for any method
+```
+
+**Quick recipes:**
+```bash
+gws tasks tasklists list                                     # list task lists
+gws tasks tasks list --params '{"tasklist":"<list-id>"}'     # list tasks in a list
+gws gmail +triage                                            # unread inbox summary
+gws calendar +list-events                                    # upcoming events
+gws drive files list --params '{"q":"name contains \"foo\"","pageSize":10}'
+gws sheets spreadsheets get --params '{"spreadsheetId":"<id>"}'
+```
+
+**Output handling:** Default output is JSON to stdout. Pipe through `jq` for filtering. Use `--format table` for human-readable summaries when responding in Telegram.
+
+**Don't:** Use `--scopes` or `auth login` again unless [YOUR NAME] explicitly asks to re-authenticate. The token is already set up correctly.
+
 ## Message Format
 
 - Messages come via Telegram — keep responses tight and readable
