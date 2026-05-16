@@ -408,6 +408,24 @@ function createSchema(database: Database.Database): void {
       total_cost  REAL NOT NULL DEFAULT 0,
       created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
     );
+
+    -- Phase 7: Vault index (structured retrieval for second-brain notes)
+    CREATE TABLE IF NOT EXISTS vault_index (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      path        TEXT NOT NULL UNIQUE,
+      title       TEXT NOT NULL,
+      date        TEXT,
+      source      TEXT,
+      type        TEXT,
+      status      TEXT,
+      project     TEXT,
+      tags        TEXT NOT NULL DEFAULT '[]',
+      updated_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_vault_type ON vault_index(type);
+    CREATE INDEX IF NOT EXISTS idx_vault_status ON vault_index(status);
+    CREATE INDEX IF NOT EXISTS idx_vault_project ON vault_index(project);
+    CREATE INDEX IF NOT EXISTS idx_vault_tags ON vault_index(tags);
   `);
 }
 
