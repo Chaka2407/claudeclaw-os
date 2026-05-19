@@ -2814,8 +2814,28 @@ formEl.addEventListener('submit', (e) => {
 
 stopBtn.addEventListener('click', () => abortTurn());
 
+function makeClientMsgId() {
+  // crypto.randomUUID is only available in secure contexts (HTTPS / localhost).
+  // The dashboard is often opened over plain HTTP on a LAN/Tailscale IP, where
+  // calling it throws and the submit handler dies silently.
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch (e) { /* fall through */ }
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const b = new Uint8Array(16);
+    crypto.getRandomValues(b);
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+    return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);
+  }
+  return 'cm-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
 async function sendMessage(text, existingClientMsgId) {
-  const clientMsgId = existingClientMsgId || crypto.randomUUID();
+  const clientMsgId = existingClientMsgId || makeClientMsgId();
   if (!existingClientMsgId) appendUserBubble(text, { clientMsgId });
   try {
     const res = await fetch(API + '/api/warroom/text/send' + Q, {
