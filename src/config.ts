@@ -29,6 +29,7 @@ const envConfig = readEnvFile([
   'SMART_ROUTING_ENABLED',
   'SMART_ROUTING_CHEAP_MODEL',
   'SHOW_COST_FOOTER',
+  'MEMORY_NOTIFY',
   'DAILY_COST_BUDGET',
   'HOURLY_TOKEN_BUDGET',
   'MEMORY_NUDGE_INTERVAL_TURNS',
@@ -234,6 +235,12 @@ export const SMART_ROUTING_CHEAP_MODEL =
 export type CostFooterMode = 'off' | 'compact' | 'verbose' | 'cost' | 'full';
 export const SHOW_COST_FOOTER: CostFooterMode =
   (process.env.SHOW_COST_FOOTER || envConfig.SHOW_COST_FOOTER || 'compact') as CostFooterMode;
+
+// Memory notifications: send Telegram message when high-importance memories are created.
+// Default: 'on'. Set to 'off', 'false', or '0' to disable.
+export const MEMORY_NOTIFY: boolean = !['off', 'false', '0'].includes(
+  (process.env.MEMORY_NOTIFY || envConfig.MEMORY_NOTIFY || 'on').toLowerCase(),
+);
 
 // Daily cost budget in USD. Warns at 80%. Set to 0 to disable (default).
 // Only useful for API/pay-per-use users. Subscription users should leave off.
