@@ -7,7 +7,9 @@
  * Usage:
  *   node dist/schedule-cli.js create "prompt text" "0 9 * * 1"
  *   node dist/schedule-cli.js create --pre-check 'bash cmd' "prompt" "cron"
+ *   node dist/schedule-cli.js create --model claude-haiku-4-5 "prompt" "cron"
  *   node dist/schedule-cli.js update <id> --pre-check 'bash cmd'
+ *   node dist/schedule-cli.js update <id> --model claude-haiku-4-5   (--model "" clears it)
  *   node dist/schedule-cli.js list
  *   node dist/schedule-cli.js delete <id>
  *   node dist/schedule-cli.js pause <id>
@@ -46,11 +48,15 @@ const cliTimezone = tzFlagIdx !== -1
 // Parse --pre-check flag (optional bash command to gate LLM invocation)
 const preCheckFlagIdx = process.argv.indexOf('--pre-check');
 const cliPreCheck = preCheckFlagIdx !== -1 ? process.argv[preCheckFlagIdx + 1] : undefined;
+// Parse --model flag (optional per-task model override, e.g. claude-haiku-4-5)
+const modelFlagIdx = process.argv.indexOf('--model');
+const cliModel = modelFlagIdx !== -1 ? process.argv[modelFlagIdx + 1] : undefined;
 // Remove all named flags and their values from positional args
 const flagIndices = new Set<number>();
 if (agentFlagIdx !== -1) { flagIndices.add(agentFlagIdx); flagIndices.add(agentFlagIdx + 1); }
 if (tzFlagIdx !== -1) { flagIndices.add(tzFlagIdx); flagIndices.add(tzFlagIdx + 1); }
 if (preCheckFlagIdx !== -1) { flagIndices.add(preCheckFlagIdx); flagIndices.add(preCheckFlagIdx + 1); }
+if (modelFlagIdx !== -1) { flagIndices.add(modelFlagIdx); flagIndices.add(modelFlagIdx + 1); }
 const cleanedArgv = flagIndices.size > 0
   ? process.argv.filter((_, i) => !flagIndices.has(i))
   : [...process.argv];
@@ -86,7 +92,7 @@ switch (command) {
     }
 
     const id = randomBytes(4).toString('hex');
-    createScheduledTask(id, prompt, cron, nextRun, cliAgentId, cliTimezone, cliPreCheck);
+    createScheduledTask(id, prompt, cron, nextRun, cliAgentId, cliTimezone, cliPreCheck, cliModel);
 
     console.log(`Task created: ${id}`);
     console.log(`Agent:        ${cliAgentId}`);
@@ -95,6 +101,7 @@ switch (command) {
     console.log(`Timezone:     ${cliTimezone}`);
     console.log(`Next run:     ${formatDate(nextRun)}`);
     if (cliPreCheck) console.log(`Pre-check:    ${cliPreCheck}`);
+    if (cliModel) console.log(`Model:        ${cliModel}`);
     break;
   }
 
@@ -115,6 +122,7 @@ switch (command) {
       console.log(`  Next run:  ${formatDate(t.next_run, tz)}`);
       console.log(`  Last run:  ${formatDate(t.last_run, tz)}`);
       if (t.pre_check) console.log(`  Pre-check: ${t.pre_check}`);
+      if (t.model) console.log(`  Model:     ${t.model}`);
       console.log();
     }
     break;
@@ -147,11 +155,13 @@ switch (command) {
   case 'update': {
     const id = rest[0];
     if (!id) {
-      console.error('Usage: schedule-cli update <id> [--pre-check <cmd>] [--prompt <text>] [--schedule <cron>]');
+      console.error('Usage: schedule-cli update <id> [--pre-check <cmd>] [--model <id>] [--prompt <text>] [--schedule <cron>]');
       process.exit(1);
     }
     const patch: Parameters<typeof updateScheduledTask>[1] = {};
     if (cliPreCheck !== undefined) patch.preCheck = cliPreCheck;
+    // Allow clearing model with --model "" (empty string → NULL = agent default)
+    if (cliModel !== undefined) patch.model = cliModel === '' ? null : cliModel;
     // Allow clearing pre-check with --pre-check ""
     const promptFlagIdx = process.argv.indexOf('--prompt');
     if (promptFlagIdx !== -1) patch.prompt = process.argv[promptFlagIdx + 1];
@@ -161,12 +171,13 @@ switch (command) {
       patch.nextRun = computeNextRun(patch.schedule, cliTimezone);
     }
     if (Object.keys(patch).length === 0) {
-      console.error('Nothing to update. Use --pre-check, --prompt, or --schedule.');
+      console.error('Nothing to update. Use --pre-check, --model, --prompt, or --schedule.');
       process.exit(1);
     }
     updateScheduledTask(id, patch);
     console.log(`Updated task: ${id}`);
     if ('preCheck' in patch) console.log(`Pre-check: ${patch.preCheck ?? '(cleared)'}`);
+    if ('model' in patch) console.log(`Model: ${patch.model ?? '(cleared — agent default)'}`);
     break;
   }
 

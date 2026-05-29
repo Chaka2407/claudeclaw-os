@@ -105,7 +105,7 @@ async function runDueTasks(): Promise<void> {
 
       try {
         // Run as a fresh agent call (no session — scheduled tasks are autonomous)
-        const result = await runAgent(task.prompt, undefined, () => {}, undefined, undefined, abortController, undefined, agentMcpAllowlist);
+        const result = await runAgent(task.prompt, undefined, () => {}, undefined, task.model ?? undefined, abortController, undefined, agentMcpAllowlist);
         clearTimeout(timeout);
 
         if (result.aborted) {
