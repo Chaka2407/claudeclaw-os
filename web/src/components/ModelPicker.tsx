@@ -3,6 +3,7 @@ import { ChevronDown, Check } from 'lucide-preact';
 import { useFetch } from '@/lib/useFetch';
 
 const CLAUDE_MODELS = [
+  { id: 'claude-opus-4-8', label: 'Opus 4.8' },
   { id: 'claude-opus-4-6', label: 'Opus 4.6' },
   { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
   { id: 'claude-sonnet-4-5', label: 'Sonnet 4.5' },
