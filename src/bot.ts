@@ -638,7 +638,10 @@ async function handleMessage(ctx: Context, message: string, forceVoiceReply = fa
       logger.info({ newSessionId: result.newSessionId }, 'Session saved');
     }
 
-    let rawResponse = result.text?.trim() || 'Done.';
+    let rawResponse = result.text?.trim()
+      || (result.hitMaxTurns
+        ? 'I hit the turn limit before I could finish and could not produce a final answer. The session may have grown too long — try /newchat to reset context, or break this into a smaller request.'
+        : 'Done.');
 
     // Exfiltration guard: scan for leaked secrets before sending to Telegram
     if (EXFILTRATION_GUARD_ENABLED) {
@@ -1676,7 +1679,10 @@ async function processDashboardMessage(
       setSession(chatIdStr, result.newSessionId, AGENT_ID);
     }
 
-    const rawResponse = result.text?.trim() || 'Done.';
+    const rawResponse = result.text?.trim()
+      || (result.hitMaxTurns
+        ? 'I hit the turn limit before I could finish and could not produce a final answer. The session may have grown too long — try /newchat to reset context, or break this into a smaller request.'
+        : 'Done.');
 
     // Save conversation turn
     saveConversationTurn(chatIdStr, text, rawResponse, result.newSessionId ?? sessionId, AGENT_ID);

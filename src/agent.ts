@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
@@ -134,6 +135,73 @@ export interface AgentResult {
   newSessionId: string | undefined;
   usage: UsageInfo | null;
   aborted?: boolean;
+  /** True when the SDK stopped because it ran out of agentic turns
+   *  (subtype 'error_max_turns'). The final text, if any, was recovered
+   *  from the session transcript and may be partial. */
+  hitMaxTurns?: boolean;
+}
+
+/**
+ * Recover the last non-empty assistant text block from a session transcript.
+ *
+ * The SDK's `result` event only carries text when the FINAL assistant turn
+ * is a text block. If the agent emits its answer and then makes one more tool
+ * call (e.g. TodoWrite, a notify shell command), or if it hits the max-turns
+ * cap mid-loop, `result.text` comes back empty even though the real answer is
+ * sitting earlier in the transcript. This reads it back from the .jsonl.
+ *
+ * Claude Code writes session files to
+ *   ~/.claude/projects/<escaped-cwd>/<sessionId>.jsonl
+ * where the cwd has `/` and `.` replaced by `-`. We use the SAME cwd the SDK
+ * was given (agentCwd ?? PROJECT_ROOT), not process.cwd() — for sub-agents
+ * those differ, which is why a process.cwd()-based lookup never finds the file.
+ * If the computed path is missing we fall back to scanning every project dir
+ * for the (globally-unique) session UUID.
+ */
+function recoverLastAssistantText(sessionId: string): string | null {
+  try {
+    const projectsRoot = path.join(os.homedir(), '.claude', 'projects');
+    const sdkCwd = agentCwd ?? PROJECT_ROOT;
+    const escaped = sdkCwd.replace(/[/.]/g, '-');
+
+    const candidates = [path.join(projectsRoot, escaped, `${sessionId}.jsonl`)];
+
+    // Fallback: the session UUID is unique, so locate the file in whichever
+    // project dir it actually landed in if the escaping guess is wrong.
+    if (!fs.existsSync(candidates[0]) && fs.existsSync(projectsRoot)) {
+      for (const dir of fs.readdirSync(projectsRoot)) {
+        candidates.push(path.join(projectsRoot, dir, `${sessionId}.jsonl`));
+      }
+    }
+
+    const sessionFile = candidates.find((p) => fs.existsSync(p));
+    if (!sessionFile) return null;
+
+    const lines = fs.readFileSync(sessionFile, 'utf-8').split('\n').filter(Boolean);
+    let lastText: string | null = null;
+
+    for (const line of lines) {
+      try {
+        const ev = JSON.parse(line) as Record<string, unknown>;
+        if (ev['type'] !== 'assistant') continue;
+        const msg = ev['message'] as Record<string, unknown> | undefined;
+        const content = msg?.['content'];
+        if (!Array.isArray(content)) continue;
+        for (const block of content as Array<Record<string, unknown>>) {
+          if (block['type'] === 'text') {
+            const t = (block['text'] as string | undefined)?.trim();
+            if (t) lastText = t;
+          }
+        }
+      } catch {
+        // skip malformed lines
+      }
+    }
+
+    return lastText;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -202,6 +270,7 @@ export async function runAgent(
 
   let newSessionId: string | undefined;
   let resultText: string | null = null;
+  let resultSubtype: string | undefined;
   let usage: UsageInfo | null = null;
   let didCompact = false;
   let preCompactTokens: number | null = null;
@@ -341,6 +410,7 @@ export async function runAgent(
 
       if (ev['type'] === 'result') {
         resultText = (ev['result'] as string | null | undefined) ?? null;
+        resultSubtype = ev['subtype'] as string | undefined;
 
         // Extract usage info from result event
         const evUsage = ev['usage'] as Record<string, number> | undefined;
@@ -392,7 +462,29 @@ export async function runAgent(
     clearInterval(typingInterval);
   }
 
-  return { text: resultText, newSessionId, usage };
+  // The SDK's result.text is only populated when the FINAL assistant turn is a
+  // text block. When the agent answers and then makes one more tool call, or
+  // runs out of turns mid-loop, result.text is empty even though the real
+  // answer is in the transcript. Recover it so callers don't fall back to a
+  // bare "Done." / "Task completed with no output." See recoverLastAssistantText.
+  const hitMaxTurns = resultSubtype === 'error_max_turns';
+  if (!resultText?.trim() && newSessionId) {
+    const recovered = recoverLastAssistantText(newSessionId);
+    if (recovered) {
+      logger.info(
+        { newSessionId, subtype: resultSubtype, hitMaxTurns },
+        'result.text was empty — recovered final assistant text from session transcript',
+      );
+      resultText = recovered;
+    } else {
+      logger.warn(
+        { newSessionId, subtype: resultSubtype },
+        'result.text was empty and no assistant text could be recovered from transcript',
+      );
+    }
+  }
+
+  return { text: resultText, newSessionId, usage, hitMaxTurns };
 }
 
 // ── Retry wrapper ─────────────────────────────────────────────────

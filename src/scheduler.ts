@@ -115,11 +115,14 @@ async function runDueTasks(): Promise<void> {
           return;
         }
 
+        // runAgent already recovers the final assistant text from the session
+        // transcript when the SDK's result event is empty (e.g. the agent made
+        // a tool call after answering, or hit the max-turns cap). See agent.ts.
         const text = result.text?.trim() || 'Task completed with no output.';
 
         // If the agent signals [SILENT], skip sending to Telegram but still
         // log to DB. This lets polling tasks stay quiet when nothing happened.
-        const isSilent = text.startsWith('[SILENT]');
+        const isSilent = text.includes('[SILENT]');
 
         if (!isSilent) {
           for (const chunk of splitMessage(formatForTelegram(text))) {
