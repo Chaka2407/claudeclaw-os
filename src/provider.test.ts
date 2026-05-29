@@ -12,6 +12,10 @@ vi.mock('child_process', () => ({
 
 vi.mock('./config.js', () => ({
   STORE_DIR: '/tmp/test',
+  DEFAULT_CLAUDE_MODEL: 'claude-opus-4-8',
+  CLAUDE_MODEL_OPUS: 'claude-opus-4-8',
+  CLAUDE_MODEL_SONNET: 'claude-sonnet-4-6',
+  CLAUDE_MODEL_HAIKU: 'claude-haiku-4-5',
 }));
 
 import { checkProviderAvailability } from './provider.js';

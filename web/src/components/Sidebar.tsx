@@ -143,7 +143,7 @@ function SidebarFooter() {
     setSwitching(true);
     try {
       const nextProvider = nextType === 'claude'
-        ? { type: 'claude', model: 'claude-opus-4-6' }
+        ? { type: 'claude', model: 'claude-opus-4-8' }
         : { type: nextType };
       await apiPatch('/api/agents/main/provider', { provider: nextProvider });
       invalidateFetchCache('/api/provider/status');
@@ -188,7 +188,7 @@ function SidebarFooter() {
         </div>
         <div class="mt-1.5 text-[11px] leading-snug text-[var(--color-text-muted)]">
           <span class="text-[var(--color-text-faint)]">Model</span>{' '}
-          <span class="break-all">{provider.data?.model ?? 'claude-opus-4-6'}</span>
+          <span class="break-all">{provider.data?.model ?? 'claude-opus-4-8'}</span>
         </div>
       </div>
 

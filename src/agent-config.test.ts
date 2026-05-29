@@ -15,6 +15,10 @@ vi.mock('./config.js', () => {
     get CLAUDECLAW_CONFIG() { return claudeclawConfig; },
     get PROJECT_ROOT() { return projectRoot; },
     get STORE_DIR() { return storeDir; },
+    DEFAULT_CLAUDE_MODEL: 'claude-opus-4-8',
+    CLAUDE_MODEL_OPUS: 'claude-opus-4-8',
+    CLAUDE_MODEL_SONNET: 'claude-sonnet-4-6',
+    CLAUDE_MODEL_HAIKU: 'claude-haiku-4-5',
   };
 });
 
@@ -211,7 +215,7 @@ describe('loadAgentConfig main fallback', () => {
 describe('provider config', () => {
   it('keeps legacy installs on Claude when no provider is configured', async () => {
     const { getMainProviderConfig } = await import('./provider.js');
-    expect(getMainProviderConfig()).toEqual({ type: 'claude', model: 'claude-opus-4-6' });
+    expect(getMainProviderConfig()).toEqual({ type: 'claude', model: 'claude-opus-4-8' });
   });
 
   it('maps legacy Claude model to Claude provider', async () => {

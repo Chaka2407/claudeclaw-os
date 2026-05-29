@@ -230,6 +230,23 @@ export const SMART_ROUTING_ENABLED =
 export const SMART_ROUTING_CHEAP_MODEL =
   process.env.SMART_ROUTING_CHEAP_MODEL || envConfig.SMART_ROUTING_CHEAP_MODEL || 'claude-haiku-4-5';
 
+// ── Claude model selection ──────────────────────────────────────────
+// The /model opus|sonnet|haiku Telegram shortcuts and the fresh-install
+// default all resolve through these. Defaults track the current Claude
+// lineup; override any of them in .env so a new model release is picked
+// up on the next restart WITHOUT a code change or a new release.
+// Example: CLAUDE_MODEL_OPUS=claude-opus-4-9
+export const CLAUDE_MODEL_OPUS =
+  process.env.CLAUDE_MODEL_OPUS || envConfig.CLAUDE_MODEL_OPUS || 'claude-opus-4-8';
+export const CLAUDE_MODEL_SONNET =
+  process.env.CLAUDE_MODEL_SONNET || envConfig.CLAUDE_MODEL_SONNET || 'claude-sonnet-4-6';
+export const CLAUDE_MODEL_HAIKU =
+  process.env.CLAUDE_MODEL_HAIKU || envConfig.CLAUDE_MODEL_HAIKU || 'claude-haiku-4-5';
+// Default Claude model when no provider/agent model is configured (e.g. fresh installs).
+// Falls back to the Opus alias above so it tracks the same single source of truth.
+export const DEFAULT_CLAUDE_MODEL =
+  process.env.DEFAULT_CLAUDE_MODEL || envConfig.DEFAULT_CLAUDE_MODEL || CLAUDE_MODEL_OPUS;
+
 // Cost footer on every response.
 // compact = model only, verbose = model + tokens, cost = model + $, full = everything
 export type CostFooterMode = 'off' | 'compact' | 'verbose' | 'cost' | 'full';

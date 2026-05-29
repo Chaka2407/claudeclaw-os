@@ -31,6 +31,9 @@ import {
   HOURLY_TOKEN_BUDGET,
   MEMORY_NOTIFY,
   PROJECT_ROOT,
+  CLAUDE_MODEL_OPUS,
+  CLAUDE_MODEL_SONNET,
+  CLAUDE_MODEL_HAIKU,
 } from './config.js';
 import { clearSession, getRecentConversation, getRecentMemories, getRecentTaskOutputs, getSession, getSessionConversation, logToHiveMind, pinMemory, unpinMemory, setSession, lookupWaChatId, saveWaMessageMap, saveTokenUsage, saveCompactionEvent, getCompactionCount } from './db.js';
 import { logger } from './logger.js';
@@ -155,10 +158,13 @@ const voiceEnabledChats = new Set<string>();
 // When not set, uses CLI default (Opus via Max/OAuth)
 const chatModelOverride = new Map<string, string>();
 
+// Label → model ID for the /model opus|sonnet|haiku shortcuts. IDs resolve
+// from env/config (see config.ts) so they track new model releases without a
+// code change — set CLAUDE_MODEL_OPUS etc. in .env and restart.
 const AVAILABLE_MODELS: Record<string, string> = {
-  opus: 'claude-opus-4-6',
-  sonnet: 'claude-sonnet-4-5',
-  haiku: 'claude-haiku-4-5',
+  opus: CLAUDE_MODEL_OPUS,
+  sonnet: CLAUDE_MODEL_SONNET,
+  haiku: CLAUDE_MODEL_HAIKU,
 };
 const DEFAULT_MODEL_LABEL = 'opus';
 

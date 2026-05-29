@@ -3,7 +3,7 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 import yaml from 'js-yaml';
 
-import { STORE_DIR } from './config.js';
+import { STORE_DIR, DEFAULT_CLAUDE_MODEL } from './config.js';
 
 export type ProviderType = 'claude' | 'acp' | 'opencode' | 'gemini' | 'codex';
 export type ProviderRuntimeMode = string;
@@ -31,8 +31,11 @@ export interface ProviderConfig {
   dangerouslySkipPermissions?: boolean;
 }
 
-export const DEFAULT_PROVIDER: ProviderConfig = { type: 'claude', model: 'claude-opus-4-6' };
-export const DEFAULT_CLAUDE_MODEL = 'claude-opus-4-6';
+// DEFAULT_CLAUDE_MODEL is resolved from env/config (see config.ts) so model
+// upgrades land via .env + restart, not a code change. Re-exported here to keep
+// the historical import path (./provider.js) stable for existing call sites.
+export { DEFAULT_CLAUDE_MODEL };
+export const DEFAULT_PROVIDER: ProviderConfig = { type: 'claude', model: DEFAULT_CLAUDE_MODEL };
 export const DEFAULT_CODEX_MODEL = 'gpt-5.5';
 
 export function normalizeProviderConfig(input: unknown, legacyModel?: string): ProviderConfig {

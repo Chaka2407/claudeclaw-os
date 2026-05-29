@@ -9,6 +9,10 @@ vi.mock('./config.js', () => ({
   agentCwd: undefined,
   agentProvider: { type: 'gemini' as const, model: 'gemini-2.5-pro' },
   ENABLE_ACP: false,
+  DEFAULT_CLAUDE_MODEL: 'claude-opus-4-8',
+  CLAUDE_MODEL_OPUS: 'claude-opus-4-8',
+  CLAUDE_MODEL_SONNET: 'claude-sonnet-4-6',
+  CLAUDE_MODEL_HAIKU: 'claude-haiku-4-5',
 }));
 
 vi.mock('./logger.js', () => ({
