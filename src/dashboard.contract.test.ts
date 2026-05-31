@@ -29,7 +29,11 @@ vi.mock('child_process', async () => {
   const actual = await vi.importActual<typeof import('child_process')>('child_process');
   return {
     ...actual,
-    spawnSync: vi.fn(() => ({ status: 0, stdout: '', stderr: '' })),
+    spawnSync: vi.fn((_lookup: string, args: string[] = []) => ({
+      status: args[0] === 'missing-tool' ? 1 : 0,
+      stdout: '',
+      stderr: '',
+    })),
   };
 });
 
@@ -555,6 +559,41 @@ describe('provider selection endpoints', () => {
     });
     expect(res.status).toBe(400);
     expect(await jsonOf(res)).toMatchObject({ error: expect.stringMatching(/command/i) });
+  });
+
+  it('validates provider config during agent creation before writing config', async () => {
+    const res = await app.request('/api/agents/create' + Q, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        id: 'provider-create',
+        name: 'Provider Create',
+        description: 'test agent',
+        botToken: '123:fake',
+        provider: { type: 'acp' },
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(await jsonOf(res)).toMatchObject({ error: expect.stringMatching(/command/i) });
+  });
+
+  it('preflights provider availability during agent creation', async () => {
+    const res = await app.request('/api/agents/create' + Q, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        id: 'provider-missing',
+        name: 'Provider Missing',
+        description: 'test agent',
+        botToken: '123:fake',
+        provider: { type: 'acp', command: 'missing-tool' },
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(await jsonOf(res)).toMatchObject({
+      error: expect.stringContaining('missing-tool'),
+      setupHint: expect.any(String),
+    });
   });
 });
 

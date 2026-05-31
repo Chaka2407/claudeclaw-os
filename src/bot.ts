@@ -131,6 +131,17 @@ function activeProvider(): ProviderConfig {
   return agentProvider ?? getMainProviderConfig();
 }
 
+export function modelStatusLine(provider: ProviderConfig, chatId: string): string {
+  if (provider.type === 'claude') {
+    return `Model: ${chatModelOverride.get(chatId) ?? agentDefaultModel ?? provider.model ?? DEFAULT_CLAUDE_MODEL}`;
+  }
+  if (provider.model) return `Model: ${provider.model}`;
+  if (provider.type === 'codex') return 'Model: Codex default';
+  if (provider.type === 'gemini') return 'Model: Gemini CLI default';
+  if (provider.type === 'opencode') return 'Model: OpenCode default';
+  return 'Model: Provider default';
+}
+
 function canUseTelegramUrlButton(rawUrl: string): boolean {
   try {
     const url = new URL(rawUrl);
@@ -1143,9 +1154,7 @@ export function createBot(): Bot {
   bot.command('provider', async (ctx) => {
     if (await replyIfLocked(ctx)) return;
     const provider = activeProvider();
-    const modelLine = provider.type === 'claude'
-      ? `Model: ${chatModelOverride.get(ctx.chat!.id.toString()) ?? agentDefaultModel ?? provider.model ?? DEFAULT_CLAUDE_MODEL}`
-      : 'Model: OpenCode/provider default config';
+    const modelLine = modelStatusLine(provider, ctx.chat!.id.toString());
     await ctx.reply(`Provider: ${getProviderDisplay(provider)}\n${modelLine}`);
   });
 

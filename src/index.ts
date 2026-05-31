@@ -47,7 +47,7 @@ if (AGENT_ID !== 'main') {
     systemPrompt,
     mcpServers: agentConfig.mcpServers,
   });
-  logger.info({ agentId: AGENT_ID, name: agentConfig.name }, 'Running as agent');
+  logger.info({ agentId: AGENT_ID, name: agentConfig.name, provider: agentConfig.provider }, 'Running as agent');
 } else {
   // Main bot follows the same pattern as sub-agents: load CLAUDE.md from
   // CLAUDECLAW_CONFIG/agents/main/ and set CWD to that directory so the

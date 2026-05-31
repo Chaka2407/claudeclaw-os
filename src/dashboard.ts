@@ -2919,12 +2919,29 @@ export function buildDashboardApp(botApi?: Api<RawApi>): Hono {
     if (!botToken) return c.json({ error: 'botToken required' }, 400);
 
     try {
+      const provider = body?.provider ? normalizeProviderConfig(body.provider, body?.model?.trim() || undefined) : undefined;
+      if (provider) {
+        if (!ENABLE_ACP && provider.type !== 'claude') {
+          return c.json({ error: 'Provider selection is disabled. Set ENABLE_ACP=true in .env to enable (beta).' }, 403);
+        }
+        const validationError = validateProviderConfig(provider);
+        if (validationError) return c.json({ error: validationError }, 400);
+        const availability = checkProviderAvailability(provider);
+        if (!availability.ok) {
+          return c.json({
+            error: availability.error,
+            installCommand: availability.installCommand,
+            setupHint: availability.setupHint,
+            docsUrl: availability.docsUrl,
+          }, 400);
+        }
+      }
       const result = await createAgent({
         id,
         name,
         description,
         model: body?.model?.trim() || undefined,
-        provider: body?.provider,
+        provider,
         template: body?.template?.trim() || undefined,
         botToken,
       });
