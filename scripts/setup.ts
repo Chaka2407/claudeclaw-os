@@ -884,9 +884,9 @@ async function main() {
     yamlLines.push('# The main agent uses TELEGRAM_BOT_TOKEN from .env (no override needed).');
     yamlLines.push('# telegram_bot_token_env: TELEGRAM_BOT_TOKEN');
     yamlLines.push('');
-    yamlLines.push('# Default model. Options: claude-opus-4-6, claude-sonnet-4-6, claude-haiku-4-5');
-    yamlLines.push('# Users can override per-chat with /model in Telegram.');
-    yamlLines.push('model: claude-sonnet-4-6');
+    yamlLines.push("# NOTE: the main bot's model/provider are NOT read from this file.");
+    yamlLines.push('# Configure them in the dashboard (persisted to store/main-config.json),');
+    yamlLines.push('# or per-chat with /model in Telegram. (Sub-agents DO take model from agent.yaml.)');
     yamlLines.push('');
     yamlLines.push('# Obsidian integration (optional).');
     yamlLines.push('# obsidian:');

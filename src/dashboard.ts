@@ -2021,7 +2021,10 @@ export function buildDashboardApp(botApi?: Api<RawApi>): Hono {
         turns = summary.turns;
         compactions = summary.compactions;
         const contextTokens = (summary.lastContextTokens || 0) + (summary.lastCacheRead || 0);
-        contextPct = contextTokens > 0 ? Math.round((contextTokens / CONTEXT_LIMIT) * 100) : 0;
+        // Size the gauge against the model's real window when the SDK reported
+        // one (e.g. Opus 4.8 = 1M, Sonnet 4.6 = 200k); fall back to CONTEXT_LIMIT.
+        const contextLimit = summary.lastContextWindow || CONTEXT_LIMIT;
+        contextPct = contextTokens > 0 ? Math.round((contextTokens / contextLimit) * 100) : 0;
         const ageSec = Math.floor(Date.now() / 1000) - summary.firstTurnAt;
         if (ageSec < 3600) sessionAge = Math.floor(ageSec / 60) + 'm';
         else if (ageSec < 86400) sessionAge = Math.floor(ageSec / 3600) + 'h';

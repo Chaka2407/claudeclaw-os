@@ -26,6 +26,28 @@ function toolLabel(toolName: string): string {
   return toolName;
 }
 
+/**
+ * Pull the active model's real context window from the result's `modelUsage`
+ * map (`Record<modelId, { contextWindow }>`). Prefer the requested model's
+ * entry; otherwise take the largest window (the primary model dominates any
+ * sub-agent models). Returns null when nothing reports a window.
+ */
+function pickContextWindow(modelUsage: unknown, model: string | undefined): number | null {
+  if (!modelUsage || typeof modelUsage !== 'object') return null;
+  const entries = Object.entries(modelUsage as Record<string, { contextWindow?: number }>);
+  if (model) {
+    const exact = (modelUsage as Record<string, { contextWindow?: number }>)[model]?.contextWindow;
+    if (typeof exact === 'number' && exact > 0) return exact;
+  }
+  let max: number | null = null;
+  for (const [, v] of entries) {
+    if (typeof v?.contextWindow === 'number' && v.contextWindow > 0 && (max === null || v.contextWindow > max)) {
+      max = v.contextWindow;
+    }
+  }
+  return max;
+}
+
 async function* singleTurn(text: string): AsyncGenerator<{
   type: 'user';
   message: { role: 'user'; content: string };
@@ -184,6 +206,7 @@ export class ClaudeSdkEngineAdapter implements AgentEngine {
           preCompactTokens,
           lastCallCacheRead,
           lastCallInputTokens,
+          contextWindow: pickContextWindow(ev.modelUsage, input.model),
         } : null;
         if (usage) yield { type: 'usage', usage, raw: ev };
         yield {

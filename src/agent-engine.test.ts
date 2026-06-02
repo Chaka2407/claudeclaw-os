@@ -68,7 +68,7 @@ describe('Agent Provider Engine', () => {
       { type: 'stream_event', parent_tool_use_id: null, event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'hel' } } },
       { type: 'assistant', message: { usage: { input_tokens: 123, cache_read_input_tokens: 456 }, content: [{ type: 'tool_use', id: 'tool-1', name: 'Read' }] } },
       { type: 'system', subtype: 'compact_boundary', compact_metadata: { trigger: 'auto', pre_tokens: 999 } },
-      { type: 'result', subtype: 'success', result: 'hello', usage: { input_tokens: 1000, output_tokens: 10, cache_read_input_tokens: 400 }, total_cost_usd: 0.02 },
+      { type: 'result', subtype: 'success', result: 'hello', usage: { input_tokens: 1000, output_tokens: 10, cache_read_input_tokens: 400 }, total_cost_usd: 0.02, modelUsage: { 'claude-haiku-4-5-20251001': { contextWindow: 200000, maxOutputTokens: 32000 } } },
     ]);
 
     expect(events.map((ev) => ev.type)).toEqual([
@@ -94,6 +94,7 @@ describe('Agent Provider Engine', () => {
         preCompactTokens: 999,
         lastCallCacheRead: 456,
         lastCallInputTokens: 123,
+        contextWindow: 200000,
       },
     });
     expect(events[5]).toMatchObject({ type: 'result', text: 'hello', stopReason: 'success' });

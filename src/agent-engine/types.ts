@@ -15,6 +15,12 @@ export interface AgentEngineUsage {
   preCompactTokens: number | null;
   lastCallCacheRead: number;
   lastCallInputTokens: number;
+  /**
+   * The active model's real context window (tokens), as reported by the SDK in
+   * `result.modelUsage[model].contextWindow`. Null when the engine doesn't
+   * report one (e.g. ACP providers) — consumers fall back to CONTEXT_LIMIT.
+   */
+  contextWindow: number | null;
 }
 
 export interface AgentEngineProgressEvent {
@@ -76,5 +82,6 @@ export function emptyUsage(): AgentEngineUsage {
     preCompactTokens: null,
     lastCallCacheRead: 0,
     lastCallInputTokens: 0,
+    contextWindow: null,
   };
 }

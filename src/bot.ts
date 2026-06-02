@@ -82,7 +82,9 @@ const GLOBAL_STREAM_INTERVAL_MS = 2500;
 // ── Context window tracking ──────────────────────────────────────────
 // Uses input_tokens from the last API call (= actual context window size:
 // system prompt + conversation history + tool results for that call).
-// Compares against CONTEXT_LIMIT (default 1M for Opus 4.6 1M, configurable).
+// Compares against the active model's real context window reported by the SDK
+// (e.g. Opus 4.8 = 1M, Sonnet 4.6 = 200k), falling back to CONTEXT_LIMIT when
+// the engine doesn't report one (e.g. ACP providers).
 //
 // On a fresh session the base overhead (system prompt, skills, CLAUDE.md,
 // MCP tools) can be 200-400k+ tokens. We track that baseline per session
@@ -114,7 +116,8 @@ function checkContextWarning(chatId: string, sessionId: string | undefined, usag
   }
 
   const baseline = sessionBaseline.get(baseKey)!;
-  const available = CONTEXT_LIMIT - baseline;
+  const contextLimit = usage.contextWindow ?? CONTEXT_LIMIT;
+  const available = contextLimit - baseline;
   if (available <= 0) return null;
 
   const conversationTokens = contextTokens - baseline;
@@ -805,6 +808,7 @@ async function handleMessage(ctx: Context, message: string, forceVoiceReply = fa
           result.usage.totalCostUsd,
           result.usage.didCompact,
           AGENT_ID,
+          result.usage.contextWindow,
         );
       } catch (dbErr) {
         logger.error({ err: dbErr }, 'Failed to save token usage');
@@ -1866,6 +1870,7 @@ async function processDashboardMessage(
           result.usage.totalCostUsd,
           result.usage.didCompact,
           AGENT_ID,
+          result.usage.contextWindow,
         );
       } catch (dbErr) {
         logger.error({ err: dbErr }, 'Failed to save token usage');

@@ -165,8 +165,11 @@ export const AGENT_MAX_TURNS = parseInt(
   10,
 );
 
-// Context window limit for the model. Opus 4.6 (1M context) = 1,000,000.
-// Override via CONTEXT_LIMIT in .env if using a different model variant.
+// Fallback context-window limit (tokens). The context gauge and warnings now
+// prefer the active model's REAL window as reported by the SDK per turn
+// (Opus 4.8 = 1M, Sonnet 4.6 = 200k). This value is only used when the engine
+// doesn't report one — e.g. ACP providers, or rows from before the upgrade.
+// Override via CONTEXT_LIMIT in .env to change that fallback.
 export const CONTEXT_LIMIT = parseInt(
   process.env.CONTEXT_LIMIT || envConfig.CONTEXT_LIMIT || '1000000',
   10,

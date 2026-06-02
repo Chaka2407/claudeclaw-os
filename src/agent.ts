@@ -105,6 +105,14 @@ export interface UsageInfo {
    * history + tool results for that call. Use this for context warnings.
    */
   lastCallInputTokens: number;
+  /**
+   * The active model's real context window (tokens), from the SDK's
+   * result.modelUsage. Null for engines that don't report one — callers
+   * fall back to CONTEXT_LIMIT. Use this (not CONTEXT_LIMIT) to size the
+   * context gauge so it tracks the actual model (e.g. Opus 4.8 = 1M,
+   * Sonnet 4.6 = 200k).
+   */
+  contextWindow: number | null;
 }
 
 /** Progress event emitted during agent execution for Telegram feedback. */
