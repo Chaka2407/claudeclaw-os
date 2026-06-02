@@ -2309,4 +2309,4 @@ The same `runAgent()` pattern in `src/agent.ts` works on any channel:
 
 ## License
 
-MIT
+ClaudeClaw OS is source-available under the ClaudeClaw OS Community Commercial License, see [LICENSE.md](LICENSE.md). It is not MIT and not open source. Use is limited to active Early AI-dopters community members.
