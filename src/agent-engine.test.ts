@@ -119,6 +119,30 @@ describe('Agent Provider Engine', () => {
     }));
   });
 
+  it('defaults allowDangerouslySkipPermissions to true when defaulting to bypassPermissions', async () => {
+    // SDK 0.3.x requires the skip flag whenever permissionMode is 'bypassPermissions'.
+    // When the caller specifies neither, the adapter must default both consistently.
+    mockQuery.mockReturnValue(mockEvents([
+      { type: 'result', subtype: 'success', result: '{}', usage: {}, total_cost_usd: 0 },
+    ])());
+
+    const out = [];
+    for await (const ev of new ClaudeSdkEngineAdapter().invoke({
+      prompt: 'hi',
+      provider: { type: 'claude' },
+      cwd: '/tmp/test',
+    })) {
+      out.push(ev);
+    }
+
+    expect(mockQuery).toHaveBeenCalledWith(expect.objectContaining({
+      options: expect.objectContaining({
+        permissionMode: 'bypassPermissions',
+        allowDangerouslySkipPermissions: true,
+      }),
+    }));
+  });
+
   it('keeps a completed Claude result when the SDK process errors after result', async () => {
     mockQuery.mockReturnValue((async function* () {
       yield { type: 'system', subtype: 'init', session_id: 'sess-1' };

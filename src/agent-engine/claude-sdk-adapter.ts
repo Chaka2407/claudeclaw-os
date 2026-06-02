@@ -49,6 +49,16 @@ export class ClaudeSdkEngineAdapter implements AgentEngine {
     let streamedText = '';
     let emittedResult = false;
 
+    // SDK 0.3.x requires `allowDangerouslySkipPermissions: true` whenever
+    // `permissionMode` is 'bypassPermissions'. Resolve the mode first, then default
+    // the flag to true for the bypass path when the caller didn't specify one — this
+    // preserves prior bypass behavior and keeps the adapter's own default self-consistent.
+    // An explicit `false` from the caller is respected (?? only fills nullish values).
+    const permissionMode = input.permissionMode ?? 'bypassPermissions';
+    const allowDangerouslySkipPermissions =
+      input.allowDangerouslySkipPermissions ??
+      (permissionMode === 'bypassPermissions' ? true : undefined);
+
     try {
       for await (const event of query({
         prompt: singleTurn(input.prompt),
@@ -56,9 +66,9 @@ export class ClaudeSdkEngineAdapter implements AgentEngine {
           cwd: input.cwd,
           resume: input.sessionId,
           settingSources: input.settingSources ?? ['project', 'user'],
-          permissionMode: input.permissionMode ?? 'bypassPermissions',
-          ...(input.allowDangerouslySkipPermissions !== undefined
-            ? { allowDangerouslySkipPermissions: input.allowDangerouslySkipPermissions }
+          permissionMode,
+          ...(allowDangerouslySkipPermissions !== undefined
+            ? { allowDangerouslySkipPermissions }
             : {}),
           ...(input.maxTurns && input.maxTurns > 0 ? { maxTurns: input.maxTurns } : {}),
           ...(input.env ? { env: input.env } : {}),
