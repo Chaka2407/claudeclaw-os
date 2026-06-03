@@ -100,6 +100,32 @@ describe('Agent Provider Engine', () => {
     expect(events[5]).toMatchObject({ type: 'result', text: 'hello', stopReason: 'success' });
   });
 
+  it('assembles full turn text when a turn ends text -> tool_use -> trailing text', async () => {
+    // Regression: the SDK `result` field only carries the LAST assistant text
+    // block, so a turn shaped `answer -> tool_use -> "Logged to hive mind."`
+    // used to truncate to the trailing line. We now join all top-level text.
+    const adapter = new ClaudeSdkEngineAdapter();
+    const events = await collect(adapter, [
+      { type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'text', text: 'Here is the full answer.' }] } },
+      { type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'tool_use', id: 'tool-1', name: 'Bash' }] } },
+      { type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'text', text: 'Logged to hive mind.' }] } },
+      { type: 'result', subtype: 'success', result: 'Logged to hive mind.', usage: {}, total_cost_usd: 0 },
+    ]);
+    const resultEvent = events.find((ev) => ev.type === 'result');
+    expect(resultEvent).toMatchObject({ text: 'Here is the full answer.\n\nLogged to hive mind.' });
+  });
+
+  it('excludes subagent text (parent_tool_use_id set) from the assembled result', async () => {
+    const adapter = new ClaudeSdkEngineAdapter();
+    const events = await collect(adapter, [
+      { type: 'assistant', parent_tool_use_id: 'tool-9', message: { content: [{ type: 'text', text: 'subagent chatter' }] } },
+      { type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'text', text: 'real answer' }] } },
+      { type: 'result', subtype: 'success', result: 'real answer', usage: {}, total_cost_usd: 0 },
+    ]);
+    const resultEvent = events.find((ev) => ev.type === 'result');
+    expect(resultEvent).toMatchObject({ text: 'real answer' });
+  });
+
   it('passes tool-disabled one-shot options through to Claude SDK', async () => {
     const adapter = new ClaudeSdkEngineAdapter();
     await collect(adapter, [{ type: 'result', result: '{}', usage: {}, total_cost_usd: 0 }]);

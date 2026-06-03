@@ -70,6 +70,13 @@ export class ClaudeSdkEngineAdapter implements AgentEngine {
     let lastCallInputTokens = 0;
     let streamedText = '';
     let emittedResult = false;
+    // Accumulate every top-level assistant text block across the turn. The SDK's
+    // final `result` field only carries the LAST assistant text block, so a turn
+    // shaped `text → tool_use → short text` (e.g. "Logged to hive mind.") would
+    // truncate to that trailing fragment and drop the real answer. Joining all
+    // top-level text blocks reconstructs the full response. Subagent text is
+    // excluded (parent_tool_use_id != null) so it never leaks into the reply.
+    const turnTextBlocks: string[] = [];
 
     // SDK 0.3.x requires `allowDangerouslySkipPermissions: true` whenever
     // `permissionMode` is 'bypassPermissions'. Resolve the mode first, then default
@@ -129,8 +136,17 @@ export class ClaudeSdkEngineAdapter implements AgentEngine {
         if (callCacheRead > 0) lastCallCacheRead = callCacheRead;
         if (callInputTokens > 0) lastCallInputTokens = callInputTokens;
 
-        const content = msg?.content as Array<{ type: string; id?: string; name?: string }> | undefined;
+        const content = msg?.content as Array<{ type: string; id?: string; name?: string; text?: string }> | undefined;
         if (Array.isArray(content)) {
+          // Only collect text from top-level assistant messages; subagent
+          // output (parent_tool_use_id set) must not bleed into the reply.
+          if (ev.parent_tool_use_id == null) {
+            for (const block of content) {
+              if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
+                turnTextBlocks.push(block.text);
+              }
+            }
+          }
           for (const block of content) {
             if (block.type === 'tool_use' && block.name) {
               yield {
@@ -213,9 +229,14 @@ export class ClaudeSdkEngineAdapter implements AgentEngine {
           contextWindow: pickContextWindow(ev.modelUsage, input.model),
         } : null;
         if (usage) yield { type: 'usage', usage, raw: ev };
+        // Prefer the full assembled turn text over the SDK's `result` field,
+        // which only holds the final assistant text block. Fall back to
+        // `ev.result` when no top-level text was captured.
+        const assembledText = turnTextBlocks.join('\n\n').trim();
+        const sdkResult = (ev.result as string | null | undefined) ?? null;
         yield {
           type: 'result',
-          text: (ev.result as string | null | undefined) ?? null,
+          text: assembledText || sdkResult,
           usage,
           stopReason: typeof ev.subtype === 'string' ? ev.subtype : undefined,
           raw: ev,
