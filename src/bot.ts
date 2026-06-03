@@ -44,6 +44,7 @@ import { scanForSecrets, redactSecrets } from './exfiltration-guard.js';
 import { trackUsage, getRateStatus } from './rate-tracker.js';
 import { buildCostFooter } from './cost-footer.js';
 import { DEFAULT_CLAUDE_MODEL, getMainProviderConfig, getProviderDisplay, ProviderConfig } from './provider.js';
+import { engineSupportsSystemPrompt } from './agent-engine/index.js';
 import { setHighImportanceCallback } from './memory-ingest.js';
 import { messageQueue } from './message-queue.js';
 import { parseDelegation, delegateToAgent, getAvailableAgents } from './orchestrator.js';
@@ -546,7 +547,10 @@ async function handleMessage(ctx: Context, message: string, forceVoiceReply = fa
   // Build memory context and prepend to message
   const { contextText: memCtx, surfacedMemoryIds, surfacedMemorySummaries } = await buildMemoryContext(chatIdStr, message, AGENT_ID);
   const parts: string[] = [];
-  if (agentSystemPrompt && !sessionId) parts.push(`[Agent role — follow these instructions]\n${agentSystemPrompt}\n[End agent role]`);
+  // Only inject the persona in-band for engines that can't carry it in a system
+  // prompt (ACP). On the Claude SDK path it's already pinned there every turn, so
+  // injecting again would just duplicate it on the first turn.
+  if (agentSystemPrompt && !sessionId && !engineSupportsSystemPrompt(agentProvider)) parts.push(`[Agent role — follow these instructions]\n${agentSystemPrompt}\n[End agent role]`);
   if (memCtx) parts.push(memCtx);
 
   // Inject recent scheduled task outputs so the user can reply to them naturally.
@@ -1724,7 +1728,7 @@ async function processDashboardMessage(
 
     const { contextText: memCtx, surfacedMemoryIds: dashSurfacedIds, surfacedMemorySummaries: dashSummaries } = await buildMemoryContext(chatIdStr, text, AGENT_ID);
     const dashParts: string[] = [];
-    if (agentSystemPrompt && !sessionId) dashParts.push(`[Agent role — follow these instructions]\n${agentSystemPrompt}\n[End agent role]`);
+    if (agentSystemPrompt && !sessionId && !engineSupportsSystemPrompt(agentProvider)) dashParts.push(`[Agent role — follow these instructions]\n${agentSystemPrompt}\n[End agent role]`);
     if (memCtx) dashParts.push(memCtx);
 
     const recentDashTasks = getRecentTaskOutputs(AGENT_ID, 30);

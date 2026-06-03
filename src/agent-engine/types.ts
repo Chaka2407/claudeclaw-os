@@ -56,6 +56,16 @@ export interface AgentTurnInput {
   env?: Record<string, string | undefined>;
   settingSources?: string[];
   includePartialMessages?: boolean;
+  /**
+   * Agent persona (CLAUDE.md) to use as the system prompt. When set, the Claude
+   * SDK engine passes it as a plain-string `systemPrompt`, pinning identity and
+   * boundaries into the system layer so they are present on every turn and
+   * survive compaction. This is the persona alone — no `claude_code` preset is
+   * applied (the preset was never part of this runtime). Ignored by engines that
+   * don't model a system prompt (e.g. ACP), which must deliver the persona
+   * in-band instead.
+   */
+  systemPrompt?: string;
 }
 
 export type AgentEngineEvent =

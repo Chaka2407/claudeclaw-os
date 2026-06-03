@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { AGENT_MAX_TURNS, PROJECT_ROOT, agentCwd } from './config.js';
+import { AGENT_MAX_TURNS, PROJECT_ROOT, agentCwd, agentSystemPrompt } from './config.js';
 import { readEnvFile } from './env.js';
 import { classifyError, AgentError } from './errors.js';
 import { logger } from './logger.js';
@@ -242,7 +242,11 @@ export async function runAgent(
       provider,
       sessionId: providerSessionId,
       cwd: agentCwd ?? PROJECT_ROOT,
-      settingSources: ['project', 'user'],
+      // 'user' only: the persona now rides in the system prompt (below), so we no
+      // longer need 'project' to re-load agents/{id}/CLAUDE.md from cwd on every
+      // turn. 'user' still loads ~/.claude/CLAUDE.md and global skills.
+      settingSources: ['user'],
+      ...(agentSystemPrompt ? { systemPrompt: agentSystemPrompt } : {}),
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: effectiveSkipPermissions(provider),
       ...(AGENT_MAX_TURNS > 0 ? { maxTurns: AGENT_MAX_TURNS } : {}),

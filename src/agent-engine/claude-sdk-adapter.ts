@@ -88,6 +88,10 @@ export class ClaudeSdkEngineAdapter implements AgentEngine {
           cwd: input.cwd,
           resume: input.sessionId,
           settingSources: input.settingSources ?? ['project', 'user'],
+          // Persona-only system prompt (plain string = no claude_code preset).
+          // Pins identity/boundaries in the system layer, present every turn and
+          // compaction-proof. Omitted when no persona is supplied.
+          ...(input.systemPrompt ? { systemPrompt: input.systemPrompt } : {}),
           permissionMode,
           ...(allowDangerouslySkipPermissions !== undefined
             ? { allowDangerouslySkipPermissions }

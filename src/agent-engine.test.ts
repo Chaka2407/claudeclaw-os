@@ -20,7 +20,7 @@ vi.mock('./logger.js', () => ({
 }));
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import { ClaudeSdkEngineAdapter, EngineFactory, getAcpCommand } from './agent-engine/index.js';
+import { ClaudeSdkEngineAdapter, EngineFactory, getAcpCommand, engineSupportsSystemPrompt } from './agent-engine/index.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockQuery = query as any;
@@ -118,6 +118,41 @@ describe('Agent Provider Engine', () => {
         thinking: { type: 'disabled' },
       }),
     }));
+  });
+
+  it('passes a persona systemPrompt through as a plain string (no claude_code preset)', async () => {
+    const adapter = new ClaudeSdkEngineAdapter();
+    mockQuery.mockReturnValue(mockEvents([{ type: 'result', result: '{}', usage: {}, total_cost_usd: 0 }])());
+    const out = [];
+    for await (const ev of adapter.invoke({
+      prompt: 'hi',
+      provider: { type: 'claude' },
+      cwd: '/tmp/test',
+      systemPrompt: 'You are Holden.',
+    })) {
+      out.push(ev);
+    }
+    const opts = mockQuery.mock.calls[0][0].options;
+    // Plain string, not a { type: 'preset', preset: 'claude_code' } object.
+    expect(opts.systemPrompt).toBe('You are Holden.');
+  });
+
+  it('omits systemPrompt entirely when no persona is supplied', async () => {
+    const adapter = new ClaudeSdkEngineAdapter();
+    mockQuery.mockReturnValue(mockEvents([{ type: 'result', result: '{}', usage: {}, total_cost_usd: 0 }])());
+    const out = [];
+    for await (const ev of adapter.invoke({ prompt: 'hi', provider: { type: 'claude' }, cwd: '/tmp/test' })) {
+      out.push(ev);
+    }
+    const opts = mockQuery.mock.calls[0][0].options;
+    expect(opts.systemPrompt).toBeUndefined();
+  });
+
+  it('reports per-engine system-prompt support (ACP cannot pin one)', () => {
+    // config mock sets ENABLE_ACP: true, so the claude/non-claude split applies.
+    expect(engineSupportsSystemPrompt({ type: 'claude' })).toBe(true);
+    expect(engineSupportsSystemPrompt({ type: 'opencode' })).toBe(false);
+    expect(engineSupportsSystemPrompt(undefined)).toBe(false);
   });
 
   it('defaults allowDangerouslySkipPermissions to true when defaulting to bypassPermissions', async () => {

@@ -19,3 +19,18 @@ export class EngineFactory {
   }
 }
 
+/**
+ * Whether the engine selected for `provider` models a system prompt. The Claude
+ * SDK engine does, so the persona is pinned there and callers should NOT also
+ * inject it in-band. ACP does not, so callers must deliver the persona in the
+ * message (e.g. a turn-1 injection). Mirrors `EngineFactory.forProvider`.
+ *
+ * Conservative on missing info: with ACP enabled and no provider, returns false
+ * so callers keep injecting rather than risk an ACP turn with no persona.
+ */
+export function engineSupportsSystemPrompt(provider: ProviderConfig | undefined): boolean {
+  if (!ENABLE_ACP) return true;
+  if (!provider) return false;
+  return provider.type === 'claude';
+}
+
