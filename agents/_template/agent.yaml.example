@@ -22,6 +22,15 @@ telegram_bot_token_env: MYAGENT_BOT_TOKEN
 provider:
   type: opencode
 
+# MCP server allowlist (optional).
+# List server names defined in ~/.claude/settings.json or .claude/settings.json.
+# Both stdio (command/args/env) and HTTP/SSE (type/url/headers) servers are supported.
+# If omitted, the agent gets all configured servers. If set, only the listed ones.
+# mcp_servers:
+#   - open-brain
+#   - session-tracker
+#   - slack
+
 # Obsidian integration (optional).
 # Assign folders from your vault so this agent auto-loads relevant context.
 # obsidian:

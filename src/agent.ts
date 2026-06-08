@@ -30,16 +30,27 @@ export interface McpStdioConfig {
   env?: Record<string, string>;
 }
 
+export interface McpHttpConfig {
+  type: 'http' | 'sse';
+  url: string;
+  headers?: Record<string, string>;
+}
+
+export type McpConfig = McpStdioConfig | McpHttpConfig;
+
 /**
  * Merge MCP server configs from user settings (~/.claude/settings.json) and
  * project settings (.claude/settings.json in cwd), optionally filtered by
  * an allowlist (e.g. from an agent's agent.yaml `mcp_servers` field).
  *
+ * Supports both stdio transport (command/args/env) and HTTP/SSE transport
+ * (type/url/headers), matching the Claude Agent SDK's McpServerConfig types.
+ *
  * Exported so the voice bridge can reuse the exact same loader the text
  * bot uses — keeping behavior consistent across channels.
  */
-export function loadMcpServers(allowlist?: string[], projectCwd?: string): Record<string, McpStdioConfig> {
-  const merged: Record<string, McpStdioConfig> = {};
+export function loadMcpServers(allowlist?: string[], projectCwd?: string): Record<string, McpConfig> {
+  const merged: Record<string, McpConfig> = {};
 
   // Load from project settings (.claude/settings.json in cwd). `projectCwd`
   // lets callers (e.g. the voice bridge) target a specific sub-agent's
@@ -59,7 +70,13 @@ export function loadMcpServers(allowlist?: string[], projectCwd?: string): Recor
       if (servers && typeof servers === 'object') {
         for (const [name, config] of Object.entries(servers)) {
           const cfg = config as Record<string, unknown>;
-          if (cfg.command && typeof cfg.command === 'string') {
+          if (cfg.url && typeof cfg.url === 'string') {
+            merged[name] = {
+              type: (cfg.type as 'http' | 'sse') ?? 'http',
+              url: cfg.url,
+              ...(cfg.headers ? { headers: cfg.headers as Record<string, string> } : {}),
+            };
+          } else if (cfg.command && typeof cfg.command === 'string') {
             merged[name] = {
               command: cfg.command,
               ...(cfg.args ? { args: cfg.args as string[] } : {}),
