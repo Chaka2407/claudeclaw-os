@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
+import { createRequire } from 'module';
 import yaml from 'js-yaml';
 
 import { STORE_DIR, DEFAULT_CLAUDE_MODEL } from './config.js';
@@ -194,17 +195,31 @@ function commandExists(command: string): boolean {
  */
 export function checkProviderAvailability(provider: ProviderConfig): ProviderAvailability {
   switch (provider.type) {
-    case 'claude':
+    case 'claude': {
+      // The claude-agent-sdk bundles its own Claude Code runtime and resolves it
+      // internally — it does NOT require a standalone `claude` binary on PATH.
+      // Daemon deployments (launchd/systemd/docker) typically run with a minimal
+      // PATH that does not include the dir where a globally-installed CLI lives,
+      // so gating the claude provider on `which claude` produced false
+      // "Claude Code CLI not found on PATH" 400s when switching providers from
+      // the dashboard — even though agent turns run fine. Treat the claude
+      // provider as available whenever the SDK package resolves; fall back to the
+      // PATH check (and its install hint) only when the SDK itself is absent.
+      try {
+        createRequire(import.meta.url).resolve('@anthropic-ai/claude-agent-sdk');
+        return { ok: true };
+      } catch { /* SDK not resolvable — fall through to the PATH-based check */ }
       if (!commandExists('claude')) {
         return {
           ok: false,
-          error: 'Claude Code CLI not found on PATH.',
-          installCommand: 'npm install -g @anthropic-ai/claude-code',
-          setupHint: 'Run `claude login` to authenticate (free, Pro, or Max plan), or set ANTHROPIC_API_KEY in .env for pay-per-token billing.',
+          error: 'Claude Code SDK not installed and `claude` CLI not found on PATH.',
+          installCommand: 'npm install',
+          setupHint: 'Run `npm install` to pull the bundled claude-agent-sdk, then `claude login` (free/Pro/Max) or set ANTHROPIC_API_KEY in .env for pay-per-token billing.',
           docsUrl: 'https://docs.claude.com/en/docs/claude-code/overview',
         };
       }
       return { ok: true };
+    }
     case 'opencode':
       if (!commandExists('opencode')) {
         return {

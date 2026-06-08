@@ -36,12 +36,13 @@ describe('checkProviderAvailability', () => {
       expect(result.ok).toBe(true);
     });
 
-    it('returns install command and auth hint when missing', () => {
+    it('reports ok via the bundled SDK even when the claude CLI is not on PATH', () => {
+      // The claude-agent-sdk bundles its own Claude Code runtime, so the provider
+      // is available whenever the SDK package resolves (it does in this repo)
+      // regardless of whether a standalone `claude` is on PATH. This mirrors the
+      // realistic daemon case where PATH lacks the global CLI dir.
       const result = checkProviderAvailability({ type: 'claude' });
-      expect(result.ok).toBe(false);
-      expect(result.installCommand).toContain('@anthropic-ai/claude-code');
-      expect(result.setupHint).toMatch(/claude login|ANTHROPIC_API_KEY/);
-      expect(result.docsUrl).toBeTruthy();
+      expect(result.ok).toBe(true);
     });
   });
 
