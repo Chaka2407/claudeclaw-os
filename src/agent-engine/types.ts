@@ -6,6 +6,15 @@ export interface McpStdioConfig {
   env?: Record<string, string>;
 }
 
+export interface McpHttpConfig {
+  type: 'http' | 'sse';
+  url: string;
+  headers?: Record<string, string>;
+}
+
+/** A configured MCP server: stdio (command-based) or HTTP/SSE (url-based). */
+export type McpServerConfig = McpStdioConfig | McpHttpConfig;
+
 export interface AgentEngineUsage {
   inputTokens: number;
   outputTokens: number;
@@ -51,7 +60,7 @@ export interface AgentTurnInput {
   allowDangerouslySkipPermissions?: boolean;
   allowedTools?: string[];
   disallowedTools?: string[];
-  mcpServers?: Record<string, McpStdioConfig>;
+  mcpServers?: Record<string, McpServerConfig>;
   abortController?: AbortController;
   env?: Record<string, string | undefined>;
   settingSources?: string[];
