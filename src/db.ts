@@ -519,6 +519,9 @@ function runMigrations(database: Database.Database): void {
   if (!taskColNames.includes('last_status')) {
     database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN last_status TEXT`);
   }
+  if (!taskColNames.includes('acceptance_check')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN acceptance_check TEXT`);
+  }
 
   // ── Memory V2 migration ──────────────────────────────────────────────
   // Detect old schema (has 'sector' column but no 'importance') and migrate.
@@ -1241,6 +1244,7 @@ export interface ScheduledTask {
   agent_id: string;
   started_at: number | null;
   last_status: 'success' | 'failed' | 'timeout' | null;
+  acceptance_check: string | null;
 }
 
 export function createScheduledTask(
@@ -1249,12 +1253,13 @@ export function createScheduledTask(
   schedule: string,
   nextRun: number,
   agentId = 'main',
+  acceptanceCheck: string | null = null,
 ): void {
   const now = Math.floor(Date.now() / 1000);
   db.prepare(
-    `INSERT INTO scheduled_tasks (id, prompt, schedule, next_run, status, created_at, agent_id)
-     VALUES (?, ?, ?, ?, 'active', ?, ?)`,
-  ).run(id, prompt, schedule, nextRun, now, agentId);
+    `INSERT INTO scheduled_tasks (id, prompt, schedule, next_run, status, created_at, agent_id, acceptance_check)
+     VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`,
+  ).run(id, prompt, schedule, nextRun, now, agentId, acceptanceCheck);
 }
 
 export function getDueTasks(agentId = 'main'): ScheduledTask[] {
