@@ -1181,7 +1181,15 @@ export function createBot(): Bot {
       const pin = m.pinned ? ' 📌' : '';
       return `<b>#${m.id}</b> [${m.importance.toFixed(1)}]${pin} ${escapeHtml(m.summary)}${topicStr}`;
     }).join('\n');
-    await ctx.reply(`<b>Recent memories</b>\n\n${lines}\n\n<i>/pin &lt;id&gt; to make permanent, /unpin &lt;id&gt; to remove</i>`, { parse_mode: 'HTML' });
+    // Route through splitMessage: a full set of recent memories routinely
+    // exceeds Telegram's 4096-char cap, and a single oversized ctx.reply is
+    // rejected (HTTP 400) so the user sees nothing. Every other long-output
+    // path in this file already chunks; /memory was the one that did not.
+    // Splitting on newline boundaries keeps each memory line's HTML balanced.
+    const memoryReply = `<b>Recent memories</b>\n\n${lines}\n\n<i>/pin &lt;id&gt; to make permanent, /unpin &lt;id&gt; to remove</i>`;
+    for (const part of splitMessage(memoryReply)) {
+      await ctx.reply(part, { parse_mode: 'HTML' });
+    }
   });
 
   // /pin <id> — make a memory permanent (never decays)
