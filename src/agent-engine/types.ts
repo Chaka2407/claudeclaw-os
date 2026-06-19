@@ -42,6 +42,56 @@ export interface AgentEngineProgressEvent {
   planEntries?: Array<{ content: string; status: string; priority?: string }>;
 }
 
+/** One selectable option in an AskUserQuestion question. */
+export interface AskUserQuestionOption {
+  label: string;
+  description?: string;
+}
+
+/** A single question the model wants answered. */
+export interface AskUserQuestionItem {
+  question: string;
+  header: string;
+  multiSelect?: boolean;
+  options: AskUserQuestionOption[];
+}
+
+/** Structured payload the model passes to the AskUserQuestion tool. */
+export interface AskUserQuestionRequest {
+  questions: AskUserQuestionItem[];
+}
+
+/** The user's answer to one question (selected option labels, by header). */
+export interface AskUserQuestionAnswerItem {
+  header: string;
+  question: string;
+  selected: string[];
+}
+
+/**
+ * Resolved answer fed back to the model. `null` from the resolver means the
+ * user skipped or timed out — the engine surfaces the SDK's default
+ * "did not answer" result in that case.
+ */
+export interface AskUserQuestionAnswer {
+  answers: AskUserQuestionAnswerItem[];
+  /**
+   * Optional meta-instruction appended to the tool result, e.g. the user asked
+   * to stop the clarifying-question flow and proceed. Delivered to the model
+   * alongside (or instead of) the selected answers.
+   */
+  directive?: string;
+}
+
+/**
+ * Interactive resolver for the built-in AskUserQuestion tool. A host (e.g. the
+ * Telegram bot) supplies this to render the question as a tap-to-choose UI and
+ * await the user's selection. Returns `null` if the user does not answer.
+ */
+export type AskUserQuestionResolver = (
+  request: AskUserQuestionRequest,
+) => Promise<AskUserQuestionAnswer | null>;
+
 export interface AgentTurnInput {
   prompt: string;
   provider: ProviderConfig;
@@ -75,6 +125,14 @@ export interface AgentTurnInput {
    * in-band instead.
    */
   systemPrompt?: string;
+  /**
+   * Interactive AskUserQuestion resolver. When supplied, the Claude SDK engine
+   * intercepts AskUserQuestion tool calls and routes them through this resolver
+   * (e.g. a Telegram inline keyboard) instead of letting the headless SDK
+   * auto-resolve them as unanswered. Engines that can't intercept the tool
+   * ignore this field.
+   */
+  onAskUserQuestion?: AskUserQuestionResolver;
 }
 
 export type AgentEngineEvent =

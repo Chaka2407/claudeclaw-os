@@ -8,6 +8,7 @@ import { logger } from './logger.js';
 import { getScrubbedSdkEnv } from './security.js';
 import { requireEnabled } from './kill-switches.js';
 import { EngineFactory } from './agent-engine/index.js';
+import type { AskUserQuestionResolver } from './agent-engine/index.js';
 import {
   ProviderConfig,
   ProviderRuntimeMode,
@@ -205,6 +206,7 @@ export async function runAgent(
   mcpAllowlist?: string[],
   providerConfig?: ProviderConfig,
   toolPolicy?: AgentToolPolicy,
+  onAskUserQuestion?: AskUserQuestionResolver,
 ): Promise<AgentResult> {
   // Centralized kill-switch enforcement. Throws KillSwitchDisabledError if
   // LLM_SPAWN_ENABLED has been flipped off — caller is expected to surface
@@ -277,6 +279,7 @@ export async function runAgent(
       ...(effectiveThinking ? { thinking: effectiveThinking } : {}),
       ...(toolPolicy?.allowedTools ? { allowedTools: toolPolicy.allowedTools } : {}),
       ...(toolPolicy?.disallowedTools ? { disallowedTools: toolPolicy.disallowedTools } : {}),
+      ...(onAskUserQuestion ? { onAskUserQuestion } : {}),
       abortController,
     })) {
       if (event.type === 'session') {
@@ -388,6 +391,7 @@ export async function runAgentWithRetry(
   mcpAllowlist?: string[],
   providerConfig?: ProviderConfig,
   toolPolicy?: AgentToolPolicy,
+  onAskUserQuestion?: AskUserQuestionResolver,
 ): Promise<AgentResult> {
   let lastError: AgentError | undefined;
 
@@ -405,6 +409,7 @@ export async function runAgentWithRetry(
         mcpAllowlist,
         providerConfig,
         toolPolicy,
+        onAskUserQuestion,
       );
     } catch (err) {
       if (!(err instanceof AgentError)) throw err;

@@ -1,7 +1,12 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 
 import { logger } from '../logger.js';
-import type { AgentEngine, AgentEngineEvent, AgentTurnInput } from './types.js';
+import type {
+  AgentEngine,
+  AgentEngineEvent,
+  AgentTurnInput,
+  AskUserQuestionRequest,
+} from './types.js';
 
 const TOOL_LABELS: Record<string, string> = {
   Read: 'Reading file',
@@ -48,6 +53,62 @@ function pickContextWindow(modelUsage: unknown, model: string | undefined): numb
   return max;
 }
 
+/**
+ * Build a `canUseTool` callback that bridges the built-in AskUserQuestion tool
+ * to an interactive resolver (e.g. a Telegram inline keyboard).
+ *
+ * The headless SDK has no UI to collect an answer, so an allowed AskUserQuestion
+ * auto-resolves to "The user did not answer the questions." To inject the real
+ * choice we intercept here, await the resolver, then DENY the tool with the
+ * answer as the message — the model reads that message as the tool result and
+ * proceeds. This is the documented limitation of the permission channel (it
+ * carries no success-result path); the deny payload is the pragmatic bridge.
+ *
+ * All other tools are allowed unchanged, preserving bypassPermissions behavior.
+ */
+function buildAskUserQuestionCanUseTool(input: AgentTurnInput) {
+  const resolver = input.onAskUserQuestion;
+  if (!resolver) return undefined;
+  return async (
+    toolName: string,
+    toolInput: Record<string, unknown>,
+  ): Promise<
+    | { behavior: 'allow'; updatedInput: Record<string, unknown> }
+    | { behavior: 'deny'; message: string }
+  > => {
+    if (toolName !== 'AskUserQuestion') {
+      return { behavior: 'allow', updatedInput: toolInput };
+    }
+    try {
+      const request = toolInput as unknown as AskUserQuestionRequest;
+      const answer = await resolver(request);
+      if (!answer) {
+        return { behavior: 'deny', message: 'The user did not answer the questions.' };
+      }
+      const answered = answer.answers.filter((a) => a.selected.length > 0);
+      const parts: string[] = [];
+      if (answered.length > 0) {
+        parts.push(
+          'The user answered your AskUserQuestion via the Telegram inline keyboard. ' +
+            'Treat the following selections as the answer (this is NOT an error):',
+        );
+        for (const a of answered) parts.push(`- ${a.header || a.question}: ${a.selected.join(', ')}`);
+      }
+      if (answer.directive) parts.push(answer.directive);
+      if (parts.length === 0) {
+        return { behavior: 'deny', message: 'The user did not answer the questions.' };
+      }
+      return { behavior: 'deny', message: parts.join('\n') };
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : err },
+        'AskUserQuestion resolver failed; reporting unanswered',
+      );
+      return { behavior: 'deny', message: 'The user did not answer the questions.' };
+    }
+  };
+}
+
 async function* singleTurn(text: string): AsyncGenerator<{
   type: 'user';
   message: { role: 'user'; content: string };
@@ -88,6 +149,11 @@ export class ClaudeSdkEngineAdapter implements AgentEngine {
       input.allowDangerouslySkipPermissions ??
       (permissionMode === 'bypassPermissions' ? true : undefined);
 
+    // Only wired when the host supplies an AskUserQuestion resolver (the
+    // Telegram interactive path). Other paths leave it undefined, so their
+    // tool handling is unchanged.
+    const canUseTool = buildAskUserQuestionCanUseTool(input);
+
     try {
       for await (const event of query({
         prompt: singleTurn(input.prompt),
@@ -103,6 +169,7 @@ export class ClaudeSdkEngineAdapter implements AgentEngine {
           ...(allowDangerouslySkipPermissions !== undefined
             ? { allowDangerouslySkipPermissions }
             : {}),
+          ...(canUseTool ? { canUseTool } : {}),
           ...(input.maxTurns && input.maxTurns > 0 ? { maxTurns: input.maxTurns } : {}),
           ...(input.env ? { env: input.env } : {}),
           ...(input.mcpServers && Object.keys(input.mcpServers).length ? { mcpServers: input.mcpServers } : {}),
@@ -149,6 +216,9 @@ export class ClaudeSdkEngineAdapter implements AgentEngine {
           }
           for (const block of content) {
             if (block.type === 'tool_use' && block.name) {
+              // When AskUserQuestion is handled interactively (the keyboard is
+              // the surface), skip the redundant "User question..." tool label.
+              if (block.name === 'AskUserQuestion' && input.onAskUserQuestion) continue;
               yield {
                 type: 'progress',
                 progress: {

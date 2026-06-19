@@ -1,9 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { Api, Bot, Context, InputFile, RawApi } from 'grammy';
+import { Api, Bot, Context, InlineKeyboard, InputFile, RawApi } from 'grammy';
 
 import { runAgent, runAgentWithRetry, UsageInfo, AgentProgressEvent, AgentToolPolicy } from './agent.js';
+import type {
+  AskUserQuestionRequest,
+  AskUserQuestionAnswer,
+  AskUserQuestionResolver,
+} from './agent-engine/index.js';
 import { AgentError } from './errors.js';
 import {
   AGENT_ID,
@@ -426,6 +431,384 @@ async function replyIfLocked(ctx: Context): Promise<boolean> {
  * @param forceVoiceReply  When true, always respond with audio (e.g. user sent a voice note).
  * @param skipLog  When true, skip logging this turn to conversation_log (used by /respin to avoid self-referential logging).
  */
+// ── AskUserQuestion → Telegram inline keyboard ──────────────────────
+// Bridges the built-in AskUserQuestion tool to tap-to-choose buttons. The SDK
+// adapter intercepts the tool call (see claude-sdk-adapter.ts) and invokes the
+// resolver built here; we render a keyboard, await the user's taps via the
+// callback_query handler, and hand the chosen labels back to the model.
+
+interface PendingQuestion {
+  chatId: string;
+  request: AskUserQuestionRequest;
+  // Selected option labels per question index (multi-select keeps several).
+  selections: string[][];
+  // Index of the question currently shown in the stepper.
+  current: number;
+  messageId?: number;
+  resolve: (answer: AskUserQuestionAnswer | null) => void;
+  timeout: ReturnType<typeof setTimeout>;
+  // True while the current question is awaiting a free-text "Other" reply.
+  awaitingOther: boolean;
+  // The turn's abort controller — lets the Stop button truly exit the turn.
+  abortController?: AbortController;
+  // Flips the turn-level "stop asking questions" flag (set by Proceed).
+  markStopAsking?: () => void;
+  settled: boolean;
+}
+
+// Keyed by a short token that rides in callback_data (well under Telegram's
+// 64-byte limit). The token maps to the full server-side state.
+const pendingQuestions = new Map<string, PendingQuestion>();
+// One in-flight question per chat — lets the message handler route a free-text
+// "Other" reply to the right pending question.
+const pendingByChat = new Map<string, string>();
+
+const AUQ_TIMEOUT_MS = 10 * 60 * 1000; // 10 min to tap before giving up
+const OTHER_LABEL = '✏️ Other';
+
+// Returned to the model when the user taps Proceed: end the clarifying-question
+// flow and continue. Also auto-returned for any further AskUserQuestion the
+// model tries in the same turn, so the user isn't bombarded with more popups.
+const PROCEED_DIRECTIVE =
+  'The user has ended the clarifying-question flow and wants you to proceed. ' +
+  'Use any answers gathered so far plus your best judgment. Do NOT open further ' +
+  'AskUserQuestion prompts for the rest of this turn. If meaningful ambiguity ' +
+  'remains, continue with reasonable assumptions, then at the end briefly ' +
+  'summarize what you did and ask in plain text whether they want to change ' +
+  'anything or take a different direction.';
+
+function makeToken(): string {
+  return Math.random().toString(36).slice(2, 8);
+}
+
+/** Text for the current step: "(2/3) <question>" when there are several. */
+function buildStepText(q: PendingQuestion): string {
+  const n = q.request.questions.length;
+  const cur = q.request.questions[q.current];
+  const prefix = n > 1 ? `(${q.current + 1}/${n}) ` : '';
+  return `${prefix}${cur.question}`;
+}
+
+/**
+ * Keyboard for the current step. One question at a time. Single-select steps
+ * auto-advance on tap (no Next). Multi-select steps toggle and need Next/Done
+ * to commit. Skip drops just this question; Stop aborts the whole turn.
+ */
+function buildStepKeyboard(token: string, q: PendingQuestion): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  const cur = q.request.questions[q.current];
+  const selected = q.selections[q.current] ?? [];
+  const multiQuestion = q.request.questions.length > 1;
+
+  cur.options.forEach((opt, oIdx) => {
+    const mark = selected.includes(opt.label) ? '✓ ' : '';
+    kb.text(`${mark}${opt.label}`, `auq:${token}:opt:${oIdx}`).row();
+  });
+  kb.text(OTHER_LABEL, `auq:${token}:other`).row();
+
+  // Control row, all on one line. Tapping an option only marks it. For
+  // multi-question prompts, Next cycles through the questions (wrapping from
+  // the last back to the first) so any answer can be revisited without a Prev
+  // button — and leaving a question unselected on the way past is how you skip
+  // it. Done finalises with whatever has been answered (unanswered questions
+  // are reported as skipped; Done with nothing selected = skip everything).
+  // Stop aborts the whole turn.
+  if (multiQuestion) kb.text('▶ Next', `auq:${token}:next`);
+  kb
+    .text('✅ Done', `auq:${token}:done`)
+    .text('🏁 Go', `auq:${token}:proceed`)
+    .text('✖ Stop', `auq:${token}:stop`);
+  return kb;
+}
+
+function buildAnswer(q: PendingQuestion): AskUserQuestionAnswer {
+  return {
+    answers: q.request.questions.map((question, qIdx) => ({
+      header: question.header,
+      question: question.question,
+      selected: q.selections[qIdx] ?? [],
+    })),
+  };
+}
+
+/**
+ * Final summary the keyboard message becomes once all steps are done. Shows
+ * the full question text alongside the answer so the detail isn't lost when
+ * the stepper collapses to a summary.
+ */
+function buildAnsweredText(q: PendingQuestion): string {
+  const blocks = q.request.questions.map((question, i) => {
+    const sel = q.selections[i] ?? [];
+    const label = question.header || `Q${i + 1}`;
+    const answer = sel.length ? sel.join(', ') : '(skipped)';
+    return `${question.question}\n✓ ${label}: ${answer}`;
+  });
+  return blocks.join('\n\n');
+}
+
+/** Cycle to the next question, wrapping last → first (no Prev needed). */
+async function advanceStep(api: Api, token: string): Promise<void> {
+  const q = pendingQuestions.get(token);
+  if (!q || q.settled) return;
+  q.awaitingOther = false;
+  q.current = (q.current + 1) % q.request.questions.length;
+  if (q.messageId) {
+    await api
+      .editMessageText(q.chatId, q.messageId, buildStepText(q), {
+        reply_markup: buildStepKeyboard(token, q),
+      })
+      .catch(() => {});
+  }
+}
+
+/** Finalise: edit the message to the answer summary and settle the promise. */
+async function finalizeQuestion(api: Api, token: string): Promise<void> {
+  const q = pendingQuestions.get(token);
+  if (!q || q.settled) return;
+  if (q.messageId) {
+    await api.editMessageText(q.chatId, q.messageId, buildAnsweredText(q)).catch(() => {});
+  }
+  settlePending(token, buildAnswer(q));
+}
+
+/**
+ * Proceed: submit any answers so far AND tell the model to stop asking
+ * questions for the rest of the turn. Sets the turn-level stop flag so further
+ * AskUserQuestion calls are auto-dismissed with the same directive.
+ */
+async function finalizeWithProceed(api: Api, token: string): Promise<void> {
+  const q = pendingQuestions.get(token);
+  if (!q || q.settled) return;
+  q.markStopAsking?.();
+  if (q.messageId) {
+    await api
+      .editMessageText(q.chatId, q.messageId, `${buildAnsweredText(q)}\n\n🏁 Proceeding. Questions ended, no more this turn.`)
+      .catch(() => {});
+  }
+  const answer = buildAnswer(q);
+  answer.directive = PROCEED_DIRECTIVE;
+  settlePending(token, answer);
+}
+
+function cleanupPending(token: string): void {
+  const q = pendingQuestions.get(token);
+  if (!q) return;
+  clearTimeout(q.timeout);
+  pendingQuestions.delete(token);
+  if (pendingByChat.get(q.chatId) === token) pendingByChat.delete(q.chatId);
+}
+
+function settlePending(token: string, answer: AskUserQuestionAnswer | null): void {
+  const q = pendingQuestions.get(token);
+  if (!q || q.settled) return;
+  q.settled = true;
+  cleanupPending(token);
+  q.resolve(answer);
+}
+
+/**
+ * Build the resolver handed to the agent for one chat. Renders the first step,
+ * registers pending state, and returns a promise that settles when the user
+ * finishes (or skips/stops/times out). One pending question per chat — a new
+ * one supersedes any prior unanswered question in that chat.
+ */
+function makeAskUserQuestionResolver(
+  ctx: Context,
+  chatId: number,
+  abortController?: AbortController,
+): AskUserQuestionResolver {
+  // Turn-level flag: once the user taps Proceed, every later AskUserQuestion in
+  // this same turn is auto-answered with the proceed directive (no keyboard).
+  let stopAsking = false;
+  return (request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer | null> => {
+    const chatIdStr = chatId.toString();
+    // Supersede any stale pending question in this chat.
+    const prior = pendingByChat.get(chatIdStr);
+    if (prior) settlePending(prior, null);
+
+    // Already aborted before we even render — bail immediately.
+    if (abortController?.signal.aborted) return Promise.resolve(null);
+
+    // User already chose Proceed earlier this turn — don't prompt again.
+    if (stopAsking) {
+      return Promise.resolve({ answers: [], directive: PROCEED_DIRECTIVE });
+    }
+
+    const token = makeToken();
+    return new Promise<AskUserQuestionAnswer | null>((resolve) => {
+      const timeout = setTimeout(() => {
+        void ctx.api.sendMessage(chatId, '⏳ Question timed out (no answer).').catch(() => {});
+        settlePending(token, null);
+      }, AUQ_TIMEOUT_MS);
+
+      // /stop (or the agent timeout) aborts the turn — dismiss the pending
+      // question so it doesn't dangle until the timeout fires.
+      if (abortController) {
+        abortController.signal.addEventListener(
+          'abort',
+          () => {
+            const q = pendingQuestions.get(token);
+            if (q && !q.settled && q.messageId) {
+              void ctx.api
+                .editMessageText(q.chatId, q.messageId, '✖ Dismissed (turn stopped)')
+                .catch(() => {});
+            }
+            settlePending(token, null);
+          },
+          { once: true },
+        );
+      }
+
+      const pending: PendingQuestion = {
+        chatId: chatIdStr,
+        request,
+        selections: request.questions.map(() => []),
+        current: 0,
+        resolve,
+        timeout,
+        awaitingOther: false,
+        abortController,
+        markStopAsking: () => {
+          stopAsking = true;
+        },
+        settled: false,
+      };
+      pendingQuestions.set(token, pending);
+      pendingByChat.set(chatIdStr, token);
+
+      void ctx.api
+        .sendMessage(chatId, buildStepText(pending), {
+          reply_markup: buildStepKeyboard(token, pending),
+        })
+        .then((sent) => {
+          pending.messageId = sent.message_id;
+        })
+        .catch((err) => {
+          logger.warn({ err }, 'Failed to send AskUserQuestion keyboard');
+          settlePending(token, null);
+        });
+    });
+  };
+}
+
+/**
+ * Route a free-text message to a pending "Other" capture, if the current step
+ * is awaiting one. Returns true if the message was consumed as an answer.
+ */
+async function maybeCaptureOtherReply(ctx: Context, chatIdStr: string, message: string): Promise<boolean> {
+  const token = pendingByChat.get(chatIdStr);
+  if (!token) return false;
+  const q = pendingQuestions.get(token);
+  if (!q || !q.awaitingOther) return false;
+
+  q.selections[q.current] = [message.trim()];
+  q.awaitingOther = false;
+  // Record only — re-render the step so the user can Next/Done from here.
+  if (q.messageId) {
+    await ctx.api
+      .editMessageText(q.chatId, q.messageId, `${buildStepText(q)}\n(your answer: ${message.trim()})`, {
+        reply_markup: buildStepKeyboard(token, q),
+      })
+      .catch(() => {});
+  }
+  return true;
+}
+
+/** Register the callback_query handler that consumes inline-keyboard taps. */
+function registerAuqCallbackHandler(bot: Bot): void {
+  bot.on('callback_query:data', async (ctx) => {
+    const data = ctx.callbackQuery.data;
+    if (!data.startsWith('auq:')) return; // not ours
+    const parts = data.split(':'); // auq:<token>:<action>[:<oIdx>]
+    const token = parts[1];
+    const action = parts[2];
+    const q = pendingQuestions.get(token);
+    if (!q) {
+      await ctx.answerCallbackQuery({ text: 'This question has expired.' }).catch(() => {});
+      return;
+    }
+
+    const cur = q.request.questions[q.current];
+
+    // Stop: truly exit the turn loop (mirrors /stop). Distinct from Skip.
+    if (action === 'stop') {
+      await ctx.answerCallbackQuery({ text: 'Stopping the turn' }).catch(() => {});
+      if (q.messageId) {
+        await ctx.api
+          .editMessageText(q.chatId, q.messageId, '✖ Stopped (turn aborted)')
+          .catch(() => {});
+      }
+      // Settle first so the abort listener doesn't double-edit, then abort the
+      // turn so the agent stops rather than continuing without an answer.
+      settlePending(token, null);
+      q.abortController?.abort();
+      return;
+    }
+
+    // Done: finalise with whatever has been answered so far (unanswered
+    // questions are reported as skipped) and let the turn continue.
+    if (action === 'done') {
+      await ctx.answerCallbackQuery({ text: 'Done' }).catch(() => {});
+      await finalizeQuestion(ctx.api, token);
+      return;
+    }
+
+    // Proceed: submit and end the Q&A flow for the rest of the turn.
+    if (action === 'proceed') {
+      await ctx.answerCallbackQuery({ text: 'Proceeding' }).catch(() => {});
+      await finalizeWithProceed(ctx.api, token);
+      return;
+    }
+
+    // Next: cycle to the next question (wraps last → first).
+    if (action === 'next') {
+      await ctx.answerCallbackQuery().catch(() => {});
+      await advanceStep(ctx.api, token);
+      return;
+    }
+
+    // Other: capture the answer to the current question as free text.
+    if (action === 'other') {
+      q.awaitingOther = true;
+      await ctx.answerCallbackQuery({ text: 'Type your answer as a message.' }).catch(() => {});
+      await ctx.api
+        .sendMessage(q.chatId, `✏️ Type your answer for: ${cur.question}`)
+        .catch(() => {});
+      return;
+    }
+
+    // Option tap.
+    if (action === 'opt') {
+      const oIdx = Number(parts[3]);
+      const opt = cur.options[oIdx];
+      if (!opt) {
+        await ctx.answerCallbackQuery().catch(() => {});
+        return;
+      }
+      if (cur.multiSelect) {
+        // Toggle; stay on this step until Next/Done.
+        const sel = q.selections[q.current] ?? [];
+        q.selections[q.current] = sel.includes(opt.label)
+          ? sel.filter((l) => l !== opt.label)
+          : [...sel, opt.label];
+      } else {
+        // Single-select: replace the selection; advancing is the Next tap.
+        q.selections[q.current] = [opt.label];
+      }
+      // Mark only — re-render so the ✓ shows; the user taps Next to advance.
+      await ctx.answerCallbackQuery({ text: `Selected: ${opt.label}` }).catch(() => {});
+      if (q.messageId) {
+        await ctx.api
+          .editMessageReplyMarkup(q.chatId, q.messageId, { reply_markup: buildStepKeyboard(token, q) })
+          .catch(() => {});
+      }
+      return;
+    }
+
+    await ctx.answerCallbackQuery().catch(() => {});
+  });
+}
+
 async function handleMessage(ctx: Context, message: string, forceVoiceReply = false, skipLog = false): Promise<void> {
   const chatId = ctx.chat!.id;
   const chatIdStr = chatId.toString();
@@ -488,6 +871,13 @@ async function handleMessage(ctx: Context, message: string, forceVoiceReply = fa
 
   // Record activity for idle timer
   touchActivity();
+
+  // ── AskUserQuestion "Other" capture ─────────────────────────────
+  // If a pending question in this chat is awaiting a free-text "Other" reply,
+  // consume this message as the answer instead of starting a new agent turn.
+  if (await maybeCaptureOtherReply(ctx, chatIdStr, message)) {
+    return;
+  }
 
   // Audit the incoming message
   audit({ agentId: AGENT_ID, chatId: chatIdStr, action: 'message', detail: message.slice(0, 200), blocked: false });
@@ -690,6 +1080,7 @@ async function handleMessage(ctx: Context, message: string, forceVoiceReply = fa
       agentMcpAllowlist,
       provider,
       chatToolPolicyFor(provider),
+      makeAskUserQuestionResolver(ctx, chatId, abortCtrl),
     );
 
     clearTimeout(timeoutId);
@@ -936,6 +1327,9 @@ export function createBot(): Bot {
     }
     await next();
   });
+
+  // Inline-keyboard taps for AskUserQuestion (tap-to-choose answers).
+  registerAuqCallbackHandler(bot);
 
   // Register callback for high-importance memory notifications.
   // When a memory with importance >= 0.8 is created, notify via Telegram
