@@ -565,6 +565,7 @@ function ProviderConfigPanel({ health }: { health: FetchState<Health> }) {
           class="h-8 w-[180px] rounded-md border border-[var(--color-border)] bg-[var(--color-elevated)] px-2 text-[12.5px] text-[var(--color-text)]"
         >
           <option value="opencode">OpenCode</option>
+          <option value="openrouter">OpenRouter (native)</option>
           <option value="gemini">Gemini CLI</option>
           <option value="codex">Codex ACP</option>
           <option value="claude">Claude Code</option>

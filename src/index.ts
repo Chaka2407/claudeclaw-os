@@ -221,7 +221,6 @@ async function main(): Promise<void> {
 
       if (fs.existsSync(venvPython) && fs.existsSync(serverScript)) {
         // Pre-flight: verify Python dependencies are actually installed
-
         const depCheck = spawnSync(venvPython, ['-c', 'import pipecat'], { stdio: 'pipe', timeout: 10000, windowsHide: true });
         if (depCheck.status !== 0) {
           const msg = uvAvailable

@@ -83,7 +83,7 @@ export async function findProcessesByPattern(pattern: string): Promise<number[]>
           resolve([]);
         }
       } else {
-        const p = spawn('pgrep', ['-f', pattern]);
+        const p = spawn('pgrep', ['-f', pattern], { windowsHide: true });
         let out = '';
         p.stdout.on('data', (chunk) => { out += chunk.toString(); });
         p.on('close', () => {

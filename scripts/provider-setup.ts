@@ -11,6 +11,7 @@ import {
   providerToYaml,
   type ProviderConfig,
 } from '../src/provider.js';
+import { DEFAULT_OPENROUTER_MODEL } from '../src/config.js';
 import { listAgentIds, resolveAgentDir } from '../src/agent-config.js';
 import yaml from 'js-yaml';
 
@@ -110,16 +111,21 @@ async function selectProvider(): Promise<ProviderConfig> {
   console.log('Providers:');
   console.log('  1. Claude (default)');
   console.log('  2. OpenCode');
-  console.log('  3. Gemini CLI');
-  console.log('  4. Codex ACP adapter');
-  console.log('  5. Custom ACP command');
+  console.log('  3. OpenRouter (native, OpenAI-compatible API — no CLI)');
+  console.log('  4. Gemini CLI');
+  console.log('  5. Codex ACP adapter');
+  console.log('  6. Custom ACP command');
   console.log();
 
   const answer = (await ask('Select provider', '1')).toLowerCase();
   if (answer === '2' || answer === 'opencode' || answer === 'o') return { type: 'opencode' };
-  if (answer === '3' || answer === 'gemini' || answer === 'g') return { type: 'gemini' };
-  if (answer === '4' || answer === 'codex') return { type: 'codex' };
-  if (answer === '5' || answer === 'acp' || answer === 'custom') {
+  if (answer === '3' || answer === 'openrouter' || answer === 'or') {
+    const model = await ask(`OpenRouter model id (e.g. ${DEFAULT_OPENROUTER_MODEL})`, DEFAULT_OPENROUTER_MODEL);
+    return { type: 'openrouter', model };
+  }
+  if (answer === '4' || answer === 'gemini' || answer === 'g') return { type: 'gemini' };
+  if (answer === '5' || answer === 'codex') return { type: 'codex' };
+  if (answer === '6' || answer === 'acp' || answer === 'custom') {
     const command = await ask('ACP command');
     if (!command) throw new Error('Custom ACP provider requires a command.');
     const args = splitArgs(await ask('ACP arguments', '--acp'));
@@ -171,6 +177,9 @@ async function main(): Promise<void> {
     } else {
       console.log('Keeping OpenCode current default model.');
     }
+  } else if (provider.type === 'openrouter') {
+    console.log('OpenRouter requires only OPENROUTER_API_KEY in .env (get a key at https://openrouter.ai/keys).');
+    console.log('No CLI install, no separate auth flow. Restart the bot after editing .env.');
   } else if (provider.type === 'gemini') {
     console.log('Gemini CLI found. Auth and model selection stay in Gemini CLI.');
   } else if (provider.type === 'codex') {

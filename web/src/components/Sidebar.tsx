@@ -120,7 +120,7 @@ interface Health {
 }
 
 interface ProviderStatus {
-  providerType: 'claude' | 'opencode' | 'gemini' | 'codex' | 'acp';
+  providerType: 'claude' | 'opencode' | 'openrouter' | 'gemini' | 'codex' | 'acp';
   label: string;
   model: string;
   runtime: string;
@@ -142,6 +142,9 @@ function SidebarFooter() {
     if (nextType === providerType || switching) return;
     setSwitching(true);
     try {
+      // OpenRouter (and other non-Claude providers) switch with just { type };
+      // the backend applies its single DEFAULT_OPENROUTER_MODEL default and the
+      // user picks a specific model from the live list in Settings.
       const nextProvider = nextType === 'claude'
         ? { type: 'claude', model: 'claude-opus-4-8' }
         : { type: nextType };
@@ -181,6 +184,7 @@ function SidebarFooter() {
             >
               <option value="claude">Claude</option>
               <option value="opencode">OpenCode</option>
+              <option value="openrouter">OpenRouter</option>
               <option value="gemini">Gemini</option>
               <option value="codex">Codex</option>
             </select>
@@ -226,6 +230,7 @@ function providerLabel(type: string): string {
   if (type === 'claude') return 'Claude';
   if (type === 'gemini') return 'Gemini';
   if (type === 'codex') return 'Codex';
+  if (type === 'openrouter') return 'OpenRouter';
   if (type === 'acp') return 'Custom ACP';
   return 'OpenCode';
 }
@@ -234,5 +239,6 @@ function providerDescription(type: string): string {
   if (type === 'opencode') return 'OpenCode will use its configured default model.';
   if (type === 'gemini') return 'Requires Gemini CLI on PATH. Model/auth are managed by Gemini.';
   if (type === 'codex') return 'Requires the codex-acp adapter on PATH. Auth is managed by Codex.';
+  if (type === 'openrouter') return 'OpenRouter (native). Set OPENROUTER_API_KEY in .env. Pick a model from the live list in Settings. Single-turn chat only — no prior-turn context.';
   return 'Takes effect on the next message.';
 }

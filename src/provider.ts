@@ -5,8 +5,9 @@ import { createRequire } from 'module';
 import yaml from 'js-yaml';
 
 import { STORE_DIR, DEFAULT_CLAUDE_MODEL } from './config.js';
+import { readEnvFile } from './env.js';
 
-export type ProviderType = 'claude' | 'acp' | 'opencode' | 'gemini' | 'codex';
+export type ProviderType = 'claude' | 'acp' | 'opencode' | 'gemini' | 'codex' | 'openrouter';
 export type ProviderRuntimeMode = string;
 export type ProviderThinkingMode = string;
 
@@ -43,7 +44,7 @@ export function normalizeProviderConfig(input: unknown, legacyModel?: string): P
   const raw = input && typeof input === 'object' ? input as Record<string, unknown> : {};
   const typeRaw = typeof raw.type === 'string' ? raw.type.toLowerCase() : undefined;
 
-  if (typeRaw === 'claude' || typeRaw === 'acp' || typeRaw === 'opencode' || typeRaw === 'gemini' || typeRaw === 'codex') {
+  if (typeRaw === 'claude' || typeRaw === 'acp' || typeRaw === 'opencode' || typeRaw === 'gemini' || typeRaw === 'codex' || typeRaw === 'openrouter') {
     const cfg: ProviderConfig = { type: typeRaw };
     if (typeof raw.model === 'string' && raw.model.trim()) cfg.model = raw.model.trim();
     if (typeof raw.runtimeMode === 'string' && raw.runtimeMode.trim()) cfg.runtimeMode = raw.runtimeMode.trim();
@@ -127,6 +128,7 @@ export function getProviderDisplay(provider: ProviderConfig): string {
   if (provider.type === 'opencode') return `OpenCode${suffix ? ` (${suffix})` : ' (model from OpenCode config)'}`;
   if (provider.type === 'gemini') return `Gemini CLI${suffix ? ` (${suffix})` : ' (ACP)'}`;
   if (provider.type === 'codex') return `Codex${suffix ? ` (${suffix})` : ' (codex-acp adapter)'}`;
+  if (provider.type === 'openrouter') return `OpenRouter${suffix ? ` (${suffix})` : ' (no model selected)'}`;
   return `ACP (${provider.command ?? 'custom command'}${provider.args?.length ? ` ${provider.args.join(' ')}` : ''}${suffix ? `; ${suffix}` : ''})`;
 }
 
@@ -179,7 +181,7 @@ export interface ProviderAvailability {
 
 function commandExists(command: string): boolean {
   const lookup = process.platform === 'win32' ? 'where' : 'which';
-  return spawnSync(lookup, [command], { stdio: 'pipe' }).status === 0;
+  return spawnSync(lookup, [command], { stdio: 'pipe', windowsHide: true }).status === 0;
 }
 
 /**
@@ -265,6 +267,21 @@ export function checkProviderAvailability(provider: ProviderConfig): ProviderAva
         };
       }
       return { ok: true };
+    }
+    case 'openrouter': {
+      // OpenRouter has no CLI — just check the env var is present.
+      // Read directly from process.env first (set by PM2 --update-env) with a
+      // fallback to the .env file via readEnvFile (same quote/comment handling
+      // used everywhere else) so the dashboard preflight matches runtime.
+      const fromProcess = process.env.OPENROUTER_API_KEY?.trim();
+      if (fromProcess) return { ok: true };
+      if (readEnvFile(['OPENROUTER_API_KEY']).OPENROUTER_API_KEY) return { ok: true };
+      return {
+        ok: false,
+        error: 'OPENROUTER_API_KEY is not set.',
+        setupHint: 'Get a key from https://openrouter.ai/keys, then add OPENROUTER_API_KEY=sk-or-v1-... to .env and restart with `pm2 restart claudeclaw --update-env`.',
+        docsUrl: 'https://openrouter.ai/docs',
+      };
     }
     default:
       return { ok: true };

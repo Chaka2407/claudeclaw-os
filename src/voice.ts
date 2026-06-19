@@ -17,7 +17,7 @@ let _ffmpegAvailable: boolean | null = null;
 async function hasFfmpeg(): Promise<boolean> {
   if (_ffmpegAvailable !== null) return _ffmpegAvailable;
   try {
-    await execFileAsync('ffmpeg', ['-version']);
+    await execFileAsync('ffmpeg', ['-version'], { windowsHide: true });
     _ffmpegAvailable = true;
   } catch {
     _ffmpegAvailable = false;
@@ -236,7 +236,7 @@ async function transcribeAudioLocal(filePath: string): Promise<string> {
 
   // whisper-cpp needs WAV input — convert from ogg/mp3/etc.
   const wavPath = filePath.replace(/\.[^.]+$/, '.wav');
-  await execFileAsync('ffmpeg', ['-i', filePath, '-ar', '16000', '-ac', '1', '-y', wavPath]);
+  await execFileAsync('ffmpeg', ['-i', filePath, '-ar', '16000', '-ac', '1', '-y', wavPath], { windowsHide: true });
 
   try {
     const { stdout } = await execFileAsync(whisperPath, [
@@ -245,7 +245,7 @@ async function transcribeAudioLocal(filePath: string): Promise<string> {
       '--output-json',
       '--no-timestamps',
       '-l', 'auto',
-    ]);
+    ], { windowsHide: true });
     const result = JSON.parse(stdout);
     return (result.transcription || []).map((s: { text: string }) => s.text).join(' ').trim();
   } finally {

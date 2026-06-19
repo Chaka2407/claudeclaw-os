@@ -419,6 +419,7 @@ export async function inspectAcpProviderRuntimeOptions(
     stdio: ['pipe', 'pipe', 'pipe'],
     env: getAcpEnv(),
     shell: useShell,
+    windowsHide: true,
   });
   const spawnErrorPromise = new Promise<never>((_, reject) => {
     child.once('error', (err: NodeJS.ErrnoException) => {
@@ -497,6 +498,7 @@ export class AcpEngineAdapter implements AgentEngine {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: getAcpEnv(input.env),
       shell: useShell,
+      windowsHide: true,
     });
     const spawnErrorPromise = new Promise<never>((_, reject) => {
       child.once('error', (err: NodeJS.ErrnoException) => {

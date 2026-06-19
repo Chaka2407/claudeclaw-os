@@ -40,6 +40,8 @@ const envConfig = readEnvFile([
   'WARROOM_PORT',
   'STREAM_STRATEGY',
   'ENABLE_ACP',
+  'OPENROUTER_API_KEY',
+  'OPENROUTER_MODEL',
 ]);
 
 // ── Multi-agent support ──────────────────────────────────────────────
@@ -192,6 +194,19 @@ export const DB_ENCRYPTION_KEY =
 // Google API key for Gemini (memory extraction + consolidation)
 export const GOOGLE_API_KEY =
   process.env.GOOGLE_API_KEY || envConfig.GOOGLE_API_KEY || '';
+
+// OpenRouter API key — for the native OpenRouter provider engine.
+// Get at https://openrouter.ai/keys. ClaudeClaw uses this only when the
+// active provider is type: 'openrouter'.
+export const OPENROUTER_API_KEY =
+  process.env.OPENROUTER_API_KEY || envConfig.OPENROUTER_API_KEY || '';
+
+// Default OpenRouter model when none is configured/selected. Single source of
+// truth shared by the adapter, the dashboard model list, the setup wizard, and
+// the Sidebar quick-switch. Override via OPENROUTER_MODEL in .env so a new
+// default lands on restart without a code change.
+export const DEFAULT_OPENROUTER_MODEL =
+  process.env.OPENROUTER_MODEL || envConfig.OPENROUTER_MODEL || 'z-ai/glm-4.5-air:free';
 
 // Streaming strategy for progressive Telegram updates.
 // 'global-throttle' (default): edits a placeholder message with streamed text,
