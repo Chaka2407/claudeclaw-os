@@ -6,6 +6,7 @@ import {
   getLastMemorySaveTime,
   getOtherAgentActivity,
   getRecentConsolidations,
+  getMemoryRecallMode,
   getRecentHighImportanceMemories,
   getRecentWarRoomTranscriptForChat,
   getTurnCountSinceTimestamp,
@@ -50,9 +51,11 @@ export interface BuildMemoryContextOpts {
   includeTeamActivity?: boolean;
   /** Include conversation history recall (Layer 5). Default true. */
   includeRecallHistory?: boolean;
-  /** Strict per-agent retrieval. When omitted, memories from any agent in
-   *  the chat are eligible (legacy Telegram behavior). When set, search
-   *  is constrained to memories with `agent_id = strictAgentId`. */
+  /** War-room strict isolation. Memory recall (Layers 1 & 2) is always scoped
+   *  to the calling `agentId` plus the shared tier regardless of this flag.
+   *  Setting strictAgentId additionally disables the cross-agent consolidation
+   *  (Layer 3) and team-activity (Layer 4) layers, which lack per-agent scoping.
+   *  Defaults to the caller's `agentId` for recall when omitted. */
   strictAgentId?: string;
   /** When set, append a war-room transcript bridge (last N rows from any
    *  meeting in this chat, optionally excluding the current meeting). */
@@ -72,6 +75,21 @@ export async function buildMemoryContext(
     strictAgentId,
     warRoomBridge,
   } = opts;
+
+  // Memory isolation (#95): memory recall (Layers 1 & 2) is always scoped to
+  // the calling agent plus the explicit shared tier (shared = 1). Previously the
+  // Telegram/main path passed no scope, so it pulled memories from every agent
+  // on the chat_id — the cross-agent Hive Mind leak. strictAgentId (war room)
+  // and the default agentId resolve to the same recall scope here; strictAgentId
+  // additionally gates the consolidation/team-activity layers below.
+  //
+  // #96 follow-up: existing multi-agent installs can opt back into the pre-#96
+  // behaviour via /keep-shared. In 'shared' mode we drop the agent scope so
+  // recall draws from every agent on the chat (an undefined scope = no filter
+  // in the db layer). 'isolated' (the default) keeps the per-agent + shared-tier
+  // scope. This is read per-turn so toggling takes effect without a restart.
+  const recallAgentId =
+    getMemoryRecallMode() === 'shared' ? undefined : (strictAgentId ?? agentId);
   const seen = new Set<number>();
   const summaryMap = new Map<number, string>();
   const memLines: string[] = [];
@@ -90,7 +108,7 @@ export async function buildMemoryContext(
   // NOTE: We do NOT touch memories here. The feedback loop (evaluateMemoryRelevance)
   // is the only thing that should boost salience/accessed_at. Touching at retrieval
   // creates a positive feedback loop where noise stays fresh forever.
-  const searched = searchMemories(chatId, userMessage, 5, queryEmbedding, strictAgentId);
+  const searched = searchMemories(chatId, userMessage, 5, queryEmbedding, recallAgentId);
   for (const mem of searched) {
     seen.add(mem.id);
     summaryMap.set(mem.id, mem.summary);
@@ -100,7 +118,7 @@ export async function buildMemoryContext(
   }
 
   // Layer 2: recent high-importance memories (deduplicated)
-  const recent = getRecentHighImportanceMemories(chatId, 5, strictAgentId);
+  const recent = getRecentHighImportanceMemories(chatId, 5, recallAgentId);
   for (const mem of recent) {
     if (seen.has(mem.id)) continue;
     seen.add(mem.id);

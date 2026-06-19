@@ -289,6 +289,36 @@ export function listAgentIds(): string[] {
   return [...ids];
 }
 
+/**
+ * Resolve which agent is the primary (the one that owns user-facing,
+ * install-wide notifications so they aren't sent N times by N agents).
+ *
+ * Resolution order:
+ *   1. The agent whose agent.yaml has `primary: true`.
+ *   2. 'main', if it exists (legacy default).
+ *   3. The first agent id, sorted, as a deterministic fallback.
+ *
+ * Returns null only when no agents are configured at all.
+ */
+export function resolvePrimaryAgentId(): string | null {
+  const ids = listAgentIds();
+  if (ids.length === 0) return null;
+
+  for (const id of ids) {
+    try {
+      const configPath = path.join(resolveAgentDir(id), 'agent.yaml');
+      if (!fs.existsSync(configPath)) continue;
+      const raw = yaml.load(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+      if (raw && raw['primary'] === true) return id;
+    } catch {
+      // Unreadable yaml — skip, fall through to the defaults below.
+    }
+  }
+
+  if (ids.includes('main')) return 'main';
+  return [...ids].sort()[0];
+}
+
 /** Return the capabilities (name + description) for a specific agent. */
 export function getAgentCapabilities(
   agentId: string,

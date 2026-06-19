@@ -46,6 +46,7 @@ function makeMemory(id: number, summary: string) {
     salience: 1.0,
     consolidated: 0,
     pinned: 0,
+    shared: 0,
     embedding: null,
     created_at: Math.floor(Date.now() / 1000) - 3600,
     accessed_at: Math.floor(Date.now() / 1000) - 3600,

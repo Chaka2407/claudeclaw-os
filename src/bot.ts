@@ -40,7 +40,8 @@ import {
   CLAUDE_MODEL_SONNET,
   CLAUDE_MODEL_HAIKU,
 } from './config.js';
-import { clearSession, getRecentConversation, getRecentMemories, getRecentTaskOutputs, getSession, getSessionConversation, logToHiveMind, pinMemory, unpinMemory, setSession, lookupWaChatId, saveWaMessageMap, saveTokenUsage, saveCompactionEvent, getCompactionCount } from './db.js';
+import { clearSession, getRecentConversation, getRecentMemories, getRecentTaskOutputs, getSession, getSessionConversation, logToHiveMind, pinMemory, unpinMemory, setSession, lookupWaChatId, saveWaMessageMap, saveTokenUsage, saveCompactionEvent, getCompactionCount, getMemoryMigrationNotice, setMemoryMigrationNotice } from './db.js';
+import { resolvePrimaryAgentId } from './agent-config.js';
 import { logger } from './logger.js';
 import { downloadMedia, buildPhotoMessage, buildDocumentMessage, buildVideoMessage } from './media.js';
 import { buildMemoryContext, evaluateMemoryRelevance, saveConversationTurn, shouldNudgeMemory, MEMORY_NUDGE_TEXT } from './memory.js';
@@ -1341,6 +1342,28 @@ export function createBot(): Bot {
     });
   }
 
+  // One-time memory-isolation notice (#96 follow-up). Existing multi-agent
+  // installs had cross-agent shared recall as their lived-in behaviour; the
+  // #96 fix flips them to per-agent isolation on upgrade. Surface that change
+  // once, from the primary agent only (so it isn't sent N times). The migration
+  // stamp sets the 'pending' flag only for installs that had >1 agent before
+  // upgrading; fresh/single-agent installs never see it. We claim the notice
+  // atomically (flip to 'sent' before sending) so a restart can't re-fire it.
+  // Informational only — reverting to shared recall is a documented setting
+  // (see README "Memory isolation"); we deliberately do not add install-wide
+  // slash commands that would clutter every agent's menu.
+  if (ALLOWED_CHAT_ID && AGENT_ID === resolvePrimaryAgentId() && getMemoryMigrationNotice() === 'pending') {
+    setMemoryMigrationNotice('sent');
+    const notice =
+      '🧠 <b>Heads up: memory recall is now per-agent.</b>\n\n' +
+      'Each of your agents now recalls only its own memories plus anything explicitly shared. ' +
+      'This closes a cross-agent leak where one agent could absorb another agent’s disposition.\n\n' +
+      'Some of your existing memories are genuinely system-wide (date handling, deploy steps, the agent roster, lane rules). They stay private until promoted to the shared tier.\n\n' +
+      'See the README (“Memory isolation”) for details, how to promote shared memories, and how to revert to shared recall if you need it.\n\n' +
+      'Doing nothing keeps the safer per-agent default.';
+    bot.api.sendMessage(ALLOWED_CHAT_ID, notice, { parse_mode: 'HTML' }).catch(() => {});
+  }
+
   // Register commands in the Telegram menu (built-in + auto-discovered skills)
   const builtInCommands = [
     { command: 'start', description: 'Start the bot' },
@@ -1560,11 +1583,13 @@ export function createBot(): Bot {
     await ctx.reply(`Provider: ${getProviderDisplay(provider)}\n${modelLine}`);
   });
 
-  // /memory — show recent memories for this chat
+  // /memory — show recent memories for this agent on this chat
   bot.command('memory', async (ctx) => {
     if (await replyIfLocked(ctx)) return;
     const chatId = ctx.chat!.id.toString();
-    const recent = getRecentMemories(chatId, 10);
+    // Scope to this agent + shared tier so the dump matches the recall path
+    // (#95/#96). Matters when agents share a chat_id but hold separate context.
+    const recent = getRecentMemories(chatId, 10, AGENT_ID);
     if (recent.length === 0) {
       await ctx.reply('No memories yet.');
       return;

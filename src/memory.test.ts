@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('./db.js', () => ({
   searchMemories: vi.fn(),
   getRecentHighImportanceMemories: vi.fn(),
+  getMemoryRecallMode: vi.fn(() => 'isolated'),
   getOtherAgentActivity: vi.fn(() => []),
   getConsolidationsWithEmbeddings: vi.fn(() => []),
   touchMemory: vi.fn(),
@@ -41,6 +42,7 @@ import {
 import {
   searchMemories,
   getRecentHighImportanceMemories,
+  getMemoryRecallMode,
   touchMemory,
   decayMemories,
   logConversationTurn,
@@ -74,6 +76,7 @@ function makeMemory(overrides: Record<string, unknown> = {}) {
     salience: 1.0,
     consolidated: 0,
     pinned: 0,
+    shared: 0,
     embedding: null,
     created_at: 100,
     accessed_at: 100,
@@ -118,6 +121,50 @@ describe('buildMemoryContext', () => {
     const { contextText } = await buildMemoryContext('chat1', 'shared');
     const occurrences = contextText.split('shared memory').length - 1;
     expect(occurrences).toBe(1);
+  });
+
+  it('scopes recall to the calling agent by default (memory isolation #95)', async () => {
+    mockSearchMemories.mockReturnValue([]);
+    mockGetRecentHighImportance.mockReturnValue([]);
+
+    await buildMemoryContext('chat1', 'hello', 'naomi');
+
+    // Layer 1 + Layer 2 must be constrained to the calling agent's scope
+    // (5th arg of searchMemories, 3rd arg of getRecentHighImportanceMemories).
+    expect(mockSearchMemories.mock.calls[0][4]).toBe('naomi');
+    expect(mockGetRecentHighImportance.mock.calls[0][2]).toBe('naomi');
+  });
+
+  it('defaults the recall scope to main when no agent is given', async () => {
+    mockSearchMemories.mockReturnValue([]);
+    mockGetRecentHighImportance.mockReturnValue([]);
+
+    await buildMemoryContext('chat1', 'hello');
+
+    expect(mockSearchMemories.mock.calls[0][4]).toBe('main');
+    expect(mockGetRecentHighImportance.mock.calls[0][2]).toBe('main');
+  });
+
+  it('strictAgentId still constrains recall scope (war-room callers)', async () => {
+    mockSearchMemories.mockReturnValue([]);
+    mockGetRecentHighImportance.mockReturnValue([]);
+
+    await buildMemoryContext('chat1', 'hello', 'main', { strictAgentId: 'drummer' });
+
+    expect(mockSearchMemories.mock.calls[0][4]).toBe('drummer');
+    expect(mockGetRecentHighImportance.mock.calls[0][2]).toBe('drummer');
+  });
+
+  it('shared recall mode drops the agent scope (pre-#96 behaviour, #96 follow-up)', async () => {
+    mockSearchMemories.mockReturnValue([]);
+    mockGetRecentHighImportance.mockReturnValue([]);
+    vi.mocked(getMemoryRecallMode).mockReturnValueOnce('shared');
+
+    await buildMemoryContext('chat1', 'hello', 'naomi');
+
+    // In shared mode recall draws from every agent: scope is undefined.
+    expect(mockSearchMemories.mock.calls[0][4]).toBeUndefined();
+    expect(mockGetRecentHighImportance.mock.calls[0][2]).toBeUndefined();
   });
 
   it('does NOT touch memories at retrieval (feedback loop handles this)', async () => {
