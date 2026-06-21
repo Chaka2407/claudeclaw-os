@@ -6,6 +6,7 @@ import * as acp from '@agentclientprotocol/sdk';
 
 import { PROJECT_ROOT } from '../config.js';
 import { logger } from '../logger.js';
+import { VERSION } from '../version.js';
 import type { ProviderConfig } from '../provider.js';
 import { getScrubbedSdkEnv } from '../security.js';
 import type { AgentEngine, AgentEngineEvent, AgentEngineProgressEvent, AgentTurnInput, McpStdioConfig } from './types.js';
@@ -443,7 +444,7 @@ export async function inspectAcpProviderRuntimeOptions(
         fs: { readTextFile: true, writeTextFile: true },
         terminal: false,
       },
-      clientInfo: { name: 'ClaudeClaw', version: '1.1.0' },
+      clientInfo: { name: 'ClaudeClaw', version: VERSION },
     })), timeoutMs, 'ACP provider initialize');
 
     const created = await withTimeout(withSpawnError(connection.newSession({
@@ -542,7 +543,7 @@ export class AcpEngineAdapter implements AgentEngine {
           fs: { readTextFile: true, writeTextFile: true },
           terminal: false,
         },
-        clientInfo: { name: 'ClaudeClaw', version: '1.1.0' },
+        clientInfo: { name: 'ClaudeClaw', version: VERSION },
       }));
 
       logger.info(

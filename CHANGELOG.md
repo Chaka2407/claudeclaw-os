@@ -2,7 +2,19 @@
 
 All notable changes to ClaudeClaw will be documented here.
 
-## [unreleased] - 2026-05-01
+From v1.2.0 onward this file is generated from Conventional Commit history with
+[git-cliff](https://git-cliff.org) (`git cliff --tag vX.Y.Z`). See CONTRIBUTING.md.
+
+## [1.2.0] - 2026-06-21
+
+Rolls up everything since v1.1.1: **215 commits across 46 PRs** (77 features, 77 fixes,
+plus security hardening). Highlights: native OpenRouter engine and config-driven providers,
+HTTP/SSE MCP support, Mission Control v2 frontend rewrite, 3D Hive Mind visualization,
+display-names architecture, scheduled-task editing, text War Room, kill-switch toggles,
+and Agent SDK 0.2.50 → 0.3.159. No breaking changes. The dated sections below are the
+development log accumulated for this release.
+
+## 1.2.0 — dev log (2026-05-01)
 
 ### Fixed — per-agent provider selection
 - Dashboard-created agents can now choose a full provider config at
@@ -35,7 +47,7 @@ All notable changes to ClaudeClaw will be documented here.
   files. Agents pick up the change on their next turn — no restart
   needed.
 
-## [unreleased] - 2026-04-29
+## 1.2.0 — dev log (2026-04-29)
 
 ### Added — text war room
 - Multi-agent text war room (`/warroom/text`) with real-time SSE streaming, sticky-addressee follow-ups, `/standup`, `/discuss`, ack short-circuit, and per-meeting persistence.
