@@ -3039,6 +3039,34 @@ export function stampMemoryIsolationMigration(database: Database.Database = db):
   }
 }
 
+/**
+ * Migrate an arbitrary ClaudeClaw database file to the current schema, in place.
+ *
+ * Opens `dbPath` with the same pragmas as initDatabase(), then applies
+ * createSchema (IF NOT EXISTS), runMigrations (idempotent ADD COLUMN) and
+ * stampMemoryIsolationMigration on that handle. Unlike initDatabase() this does
+ * NOT depend on STORE_DIR and does NOT touch the process-wide `db` connection,
+ * so migration tooling can upgrade a snapshot copy without disturbing a running
+ * instance.
+ *
+ * Idempotent: safe to run repeatedly. Memory isolation is preserved — existing
+ * rows keep their `shared` value (new rows default to 0) and nothing is ever
+ * shared retroactively. The file is opened with a fresh connection that is
+ * always closed before returning, even on error.
+ */
+export function migrateDbFile(dbPath: string): void {
+  const database = new Database(dbPath);
+  try {
+    database.pragma('journal_mode = WAL');
+    database.pragma('busy_timeout = 5000');
+    createSchema(database);
+    runMigrations(database);
+    stampMemoryIsolationMigration(database);
+  } finally {
+    database.close();
+  }
+}
+
 // ── Agent file history (versioned backups in SQLite) ────────────────
 
 export type AgentFileKind = 'claudemd' | 'agent-yaml';

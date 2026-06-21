@@ -1,6 +1,11 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import Database from 'better-sqlite3';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import {
   _initTestDatabase,
+  migrateDbFile,
   setSession,
   getSession,
   clearSession,
@@ -518,5 +523,89 @@ describe('database', () => {
       expect(timeline[0]).toHaveProperty('date');
       expect(timeline[0]).toHaveProperty('count');
     });
+  });
+});
+
+describe('migrateDbFile', () => {
+  let dir: string;
+  let dbPath: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'migrate-db-'));
+    dbPath = path.join(dir, 'legacy.db');
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** Build a pre-isolation "legacy" memories table: no `shared` column,
+   *  populated across two agents, plus an unrelated existing table. */
+  function seedLegacyDb(): void {
+    const legacy = new Database(dbPath);
+    legacy.exec(`
+      CREATE TABLE memories (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        chat_id     TEXT NOT NULL,
+        agent_id    TEXT NOT NULL,
+        summary     TEXT NOT NULL,
+        created_at  INTEGER NOT NULL
+      );
+    `);
+    const insert = legacy.prepare(
+      `INSERT INTO memories (chat_id, agent_id, summary, created_at) VALUES (?, ?, ?, ?)`,
+    );
+    insert.run('chat1', 'rc1', 'rc1 fact', 100);
+    insert.run('chat1', 'rc2', 'rc2 fact', 101);
+    insert.run('chat1', 'rc1', 'rc1 fact 2', 102);
+    legacy.close();
+  }
+
+  it('adds the isolation `shared` column without sharing anything retroactively', () => {
+    seedLegacyDb();
+    migrateDbFile(dbPath);
+
+    const db = new Database(dbPath);
+    const cols = db.prepare(`PRAGMA table_info(memories)`).all() as Array<{ name: string }>;
+    expect(cols.some((c) => c.name === 'shared')).toBe(true);
+
+    const shared = db.prepare(`SELECT COUNT(*) AS n FROM memories WHERE shared = 1`).get() as { n: number };
+    expect(shared.n).toBe(0); // strict isolation preserved — nothing shared on migrate
+    db.close();
+  });
+
+  it('preserves existing rows and their data', () => {
+    seedLegacyDb();
+    migrateDbFile(dbPath);
+
+    const db = new Database(dbPath);
+    const count = db.prepare(`SELECT COUNT(*) AS n FROM memories`).get() as { n: number };
+    expect(count.n).toBe(3);
+    const summaries = db.prepare(`SELECT summary FROM memories ORDER BY id`).all() as Array<{ summary: string }>;
+    expect(summaries.map((r) => r.summary)).toEqual(['rc1 fact', 'rc2 fact', 'rc1 fact 2']);
+    db.close();
+  });
+
+  it('is idempotent — a second run is a no-op and does not throw', () => {
+    seedLegacyDb();
+    migrateDbFile(dbPath);
+    expect(() => migrateDbFile(dbPath)).not.toThrow();
+
+    const db = new Database(dbPath);
+    const count = db.prepare(`SELECT COUNT(*) AS n FROM memories`).get() as { n: number };
+    expect(count.n).toBe(3);
+    db.close();
+  });
+
+  it('creates the full schema on an empty database file', () => {
+    migrateDbFile(dbPath); // no seed — fresh file
+    const db = new Database(dbPath);
+    const tables = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table'`)
+      .all() as Array<{ name: string }>;
+    const names = tables.map((t) => t.name);
+    expect(names).toContain('memories');
+    expect(names).toContain('dashboard_settings');
+    db.close();
   });
 });
