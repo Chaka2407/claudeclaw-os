@@ -43,6 +43,7 @@ const envConfig = readEnvFile([
   'ENABLE_ACP',
   'OPENROUTER_API_KEY',
   'OPENROUTER_MODEL',
+  'CLAUDECLAW_STORE_DIR',
 ]);
 
 // ── Multi-agent support ──────────────────────────────────────────────
@@ -118,7 +119,16 @@ const __dirname = path.dirname(__filename);
 // The SDK uses this as cwd, which causes Claude Code to load our CLAUDE.md
 // and all global skills from ~/.claude/skills/ via settingSources.
 export const PROJECT_ROOT = path.resolve(__dirname, '..');
-export const STORE_DIR = path.resolve(PROJECT_ROOT, 'store');
+
+// STORE_DIR holds the SQLite database, PID locks and avatars. Defaults to
+// PROJECT_ROOT/store. Set CLAUDECLAW_STORE_DIR (env or .env) to point at an
+// external store directory — e.g. to run several builds against one shared
+// database. ~/... is expanded. (expandHome is hoisted, defined just below.)
+const rawStoreDir =
+  process.env.CLAUDECLAW_STORE_DIR || envConfig.CLAUDECLAW_STORE_DIR || '';
+export const STORE_DIR = rawStoreDir
+  ? expandHome(rawStoreDir)
+  : path.resolve(PROJECT_ROOT, 'store');
 
 // ── External config directory ────────────────────────────────────────
 // Personal config files (CLAUDE.md, agent.yaml, agent CLAUDE.md) can live
