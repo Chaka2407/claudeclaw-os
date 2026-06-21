@@ -67,6 +67,12 @@ export interface AgentConfig {
   description: string;
   botTokenEnv: string;
   botToken: string;
+  /** When false, the agent runs automation-only: it never polls Telegram
+   *  for incoming updates (no getUpdates), only sending outbound messages
+   *  (scheduler results, alerts). Lets a non-interactive agent share one
+   *  bot token with an interactive agent without a getUpdates 409 conflict.
+   *  Defaults to true (full interactive polling). */
+  interactive: boolean;
   model?: string;
   provider: ProviderConfig;
   mcpServers?: string[];
@@ -146,6 +152,9 @@ export function loadAgentConfig(agentId: string): AgentConfig {
   const description = (raw['description'] as string) ?? '';
   const botTokenEnv = (raw['telegram_bot_token_env'] as string) || (agentId === 'main' ? 'TELEGRAM_BOT_TOKEN' : '');
   const model = raw['model'] as string | undefined;
+  // interactive defaults to true; set `interactive: false` for automation-only
+  // agents that must not poll Telegram (e.g. a scheduler agent sharing a token).
+  const interactive = raw['interactive'] === false ? false : true;
   const provider = readProviderFromYaml(raw);
 
   if (!name) {
@@ -194,6 +203,7 @@ export function loadAgentConfig(agentId: string): AgentConfig {
     description,
     botTokenEnv,
     botToken,
+    interactive,
     model,
     provider,
     mcpServers,

@@ -27,8 +27,14 @@ const AGENT_ID = agentFlagIndex !== -1 ? process.argv[agentFlagIndex + 1] : 'mai
 // Export AGENT_ID to env so child processes (schedule-cli, etc.) inherit it
 process.env.CLAUDECLAW_AGENT_ID = AGENT_ID;
 
+// When false, this agent runs automation-only (no Telegram polling). Only a
+// non-main agent can opt out via `interactive: false` in its agent.yaml; the
+// main bot is always interactive.
+let AGENT_INTERACTIVE = true;
+
 if (AGENT_ID !== 'main') {
   const agentConfig = loadAgentConfig(AGENT_ID);
+  AGENT_INTERACTIVE = agentConfig.interactive;
   const agentDir = resolveAgentDir(AGENT_ID);
   const claudeMdPath = resolveAgentClaudeMd(AGENT_ID);
   let systemPrompt: string | undefined;
@@ -428,6 +434,24 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown());
 
   logger.info({ agentId: AGENT_ID }, 'Starting ClaudeClaw...');
+
+  if (!AGENT_INTERACTIVE) {
+    // Automation-only agent: do NOT poll Telegram (no getUpdates), so it can
+    // share a bot token with an interactive agent without a 409 conflict. It
+    // still sends outbound messages (scheduler results, alerts) via bot.api,
+    // and stays alive on the scheduler's timers. Fetch the bot identity once
+    // for logging and outbound state.
+    try {
+      const me = await bot.api.getMe();
+      setTelegramConnected(true);
+      setBotInfo(me.username ?? '', me.first_name ?? 'ClaudeClaw');
+      logger.info({ agentId: AGENT_ID, username: me.username }, 'ClaudeClaw agent running (automation-only, no polling)');
+      console.log(`\n  ClaudeClaw agent [${AGENT_ID}] online (automation-only): @${me.username}\n`);
+    } catch (err) {
+      logger.warn({ err, agentId: AGENT_ID }, 'Could not fetch bot identity (non-fatal)');
+    }
+    return;
+  }
 
   // Clear any existing webhook so polling works cleanly (e.g., if token was
   // previously used with a webhook-based bot or another ClaudeClaw instance).
