@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitMessage, extractFileMarkers, modelStatusLine } from './bot.js';
+import { splitMessage, extractFileMarkers, modelStatusLine, registerCommandHandler } from './bot.js';
 
 describe('modelStatusLine', () => {
   it('reports Codex model instead of the OpenCode fallback text', () => {
@@ -262,5 +262,13 @@ describe('extractFileMarkers', () => {
     expect(result.text).toContain('Line 1');
     expect(result.text).toContain('Line 2');
     expect(result.text).toContain('Line 3');
+  });
+});
+
+describe('registerCommandHandler', () => {
+  it('is exported and accepts an overlay command handler without throwing', () => {
+    expect(() =>
+      registerCommandHandler({ name: 'dpp', handler: async () => true }),
+    ).not.toThrow();
   });
 });
