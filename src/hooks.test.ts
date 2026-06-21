@@ -9,7 +9,7 @@ vi.mock('./logger.js', () => ({
   },
 }));
 
-import { createHookRegistry, runHooks } from './hooks.js';
+import { createHookRegistry, runHooks, registerHook, fireHooks, getHookRegistry } from './hooks.js';
 import type { HookContext, HookFn } from './hooks.js';
 
 const baseCtx: HookContext = {
@@ -123,5 +123,32 @@ describe('runHooks', () => {
 
     await runHooks([hookReject, hookOk], baseCtx);
     expect(hookOk).toHaveBeenCalledOnce();
+  });
+});
+
+// ── registerHook / fireHooks (process-wide registry) ────────────────
+
+describe('registerHook + fireHooks', () => {
+  it('fires a programmatically registered hook at its point', async () => {
+    const seen: HookContext[] = [];
+    registerHook('onSessionEnd', async (ctx) => {
+      seen.push(ctx);
+    });
+
+    await fireHooks('onSessionEnd', baseCtx);
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0].chatId).toBe('12345');
+    // Registry is process-wide: the hook lives on the singleton.
+    expect(getHookRegistry().onSessionEnd.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('does not fire hooks registered at a different point', async () => {
+    const onEnd = vi.fn(async () => {});
+    registerHook('onSessionEnd', onEnd);
+
+    await fireHooks('onSessionStart', baseCtx);
+
+    expect(onEnd).not.toHaveBeenCalled();
   });
 });

@@ -108,6 +108,29 @@ export async function runHooks(hooks: HookFn[], ctx: HookContext): Promise<void>
   }
 }
 
+// ── Process-wide registry (programmatic registration + firing) ──────
+
+const globalRegistry = createHookRegistry();
+
+/** The process-wide hook registry. */
+export function getHookRegistry(): HookRegistry {
+  return globalRegistry;
+}
+
+/**
+ * Register a single hook function programmatically (e.g. from an overlay or
+ * plugin bootstrap loaded at startup). Complements loadHooksFromDir for
+ * deployments that wire hooks in code rather than by scanning a directory.
+ */
+export function registerHook(point: keyof HookRegistry, fn: HookFn): void {
+  globalRegistry[point].push(fn);
+}
+
+/** Run all hooks registered at a point against the process-wide registry. */
+export async function fireHooks(point: keyof HookRegistry, ctx: HookContext): Promise<void> {
+  await runHooks(globalRegistry[point], ctx);
+}
+
 // ── Internal helpers ────────────────────────────────────────────────
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {

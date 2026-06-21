@@ -150,6 +150,24 @@ async function main(): Promise<void> {
   }
   logger.info('Database ready');
 
+  // Optional overlay/plugin bootstrap. A layered deployment can point
+  // OVERLAY_ENTRY at a module whose `bootstrap` (or default) export registers
+  // hooks, command handlers, or tool gates before the bot starts. Unset (the
+  // default) means pure upstream behaviour.
+  const overlayEntry = process.env.OVERLAY_ENTRY;
+  if (overlayEntry) {
+    try {
+      const mod = await import(overlayEntry);
+      await (mod.bootstrap ?? mod.default)?.();
+      logger.info({ overlayEntry }, 'Overlay bootstrap loaded');
+    } catch (err) {
+      logger.warn(
+        { overlayEntry, err: err instanceof Error ? err.message : String(err) },
+        'Overlay bootstrap failed to load',
+      );
+    }
+  }
+
   // Initialize security (PIN lock, kill phrase, destructive confirmation, audit)
   initSecurity({
     pinHash: SECURITY_PIN_HASH || undefined,

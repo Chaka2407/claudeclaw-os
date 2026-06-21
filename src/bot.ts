@@ -41,6 +41,7 @@ import {
   CLAUDE_MODEL_HAIKU,
 } from './config.js';
 import { clearSession, getRecentConversation, getRecentMemories, getRecentTaskOutputs, getSession, getSessionConversation, logToHiveMind, pinMemory, unpinMemory, setSession, lookupWaChatId, saveWaMessageMap, saveTokenUsage, saveCompactionEvent, getCompactionCount, getMemoryMigrationNotice, setMemoryMigrationNotice } from './db.js';
+import { fireHooks } from './hooks.js';
 import { resolvePrimaryAgentId } from './agent-config.js';
 import { logger } from './logger.js';
 import { downloadMedia, buildPhotoMessage, buildDocumentMessage, buildVideoMessage } from './media.js';
@@ -1484,6 +1485,14 @@ export function createBot(): Bot {
         }
       })();
     }
+
+    // Fire end-of-session hooks BEFORE clearing, so hooks (e.g. a session
+    // TLDR) can still read the conversation that is about to be wiped.
+    await fireHooks('onSessionEnd', {
+      chatId: chatIdStr,
+      agentId: AGENT_ID,
+      sessionId: oldSessionId ?? undefined,
+    });
 
     clearSession(chatIdStr, AGENT_ID);
     sessionBaseline.delete(chatIdStr);
