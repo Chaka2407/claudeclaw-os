@@ -523,6 +523,9 @@ function runMigrations(database: Database.Database): void {
   if (!taskColNames.includes('acceptance_check')) {
     database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN acceptance_check TEXT`);
   }
+  if (!taskColNames.includes('pre_check')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN pre_check TEXT`);
+  }
 
   // ── Memory V2 migration ──────────────────────────────────────────────
   // Detect old schema (has 'sector' column but no 'importance') and migrate.
@@ -1276,6 +1279,9 @@ export interface ScheduledTask {
   started_at: number | null;
   last_status: 'success' | 'failed' | 'timeout' | null;
   acceptance_check: string | null;
+  // Optional shell command run before the LLM. If it exits non-zero or prints
+  // nothing, the scheduler skips the agent call for that firing (polling gate).
+  pre_check: string | null;
 }
 
 export function createScheduledTask(

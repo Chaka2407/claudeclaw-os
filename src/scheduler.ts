@@ -1,3 +1,5 @@
+import { spawnSync } from 'child_process';
+
 import { CronExpressionParser } from 'cron-parser';
 
 import { AGENT_ID, ALLOWED_CHAT_ID, agentMcpAllowlist, agentDefaultModel } from './config.js';
@@ -22,6 +24,31 @@ import { getSelectedProviderConfig } from './active-provider.js';
 import { evaluateAcceptance } from './acceptance.js';
 
 type Sender = (text: string) => Promise<void>;
+
+/**
+ * Pre-check gate for polling tasks. Runs the task's `pre_check` shell command
+ * before spinning up the LLM. Returns true if the agent call should proceed.
+ *
+ * A task proceeds when there is no pre-check, OR the command exits 0 AND prints
+ * something. An exit of 0 with empty stdout (e.g. `true`, or a count filtered to
+ * nothing) means "nothing to do" — the firing is skipped entirely, so no LLM
+ * call and no Telegram noise. This is what keeps the every-5-minutes WhatsApp
+ * poll silent when no messages arrived.
+ */
+export function passesPreCheck(preCheck: string | null | undefined): boolean {
+  if (!preCheck) return true;
+  const result = spawnSync('bash', ['-c', preCheck], { encoding: 'utf8' });
+  return result.status === 0 && (result.stdout ?? '').trim().length > 0;
+}
+
+/**
+ * True when an agent's output asks to stay quiet. Polling tasks emit `[SILENT]`
+ * when nothing happened so the run completes without delivering anything to
+ * Telegram.
+ */
+export function isSilentOutput(text: string): boolean {
+  return text.startsWith('[SILENT]');
+}
 
 /** Max time (ms) a scheduled task can run before being killed. */
 const TASK_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -88,12 +115,20 @@ async function runDueTasks(): Promise<void> {
     // two Claude processes from hitting the same session simultaneously.
     const chatId = ALLOWED_CHAT_ID || 'scheduler';
     messageQueue.enqueue(chatId, async () => {
+      // Pre-check gate: for polling tasks, run a cheap shell command before the
+      // LLM. If it reports "nothing to do", skip this firing entirely — no agent
+      // call, no announcement, no Telegram message.
+      if (!passesPreCheck(task.pre_check)) {
+        updateTaskAfterRun(task.id, nextRun, '', 'success');
+        runningTaskIds.delete(task.id);
+        logger.debug({ taskId: task.id }, 'Pre-check returned nothing — skipping agent call');
+        return;
+      }
+
       const abortController = new AbortController();
       const timeout = setTimeout(() => abortController.abort(), TASK_TIMEOUT_MS);
 
       try {
-        await sender(`Scheduled task running: "${task.prompt.slice(0, 80)}${task.prompt.length > 80 ? '...' : ''}"`);
-
         // Run as a fresh agent call (no session — scheduled tasks are autonomous)
         const result = await runAgent(
           task.prompt,
@@ -116,6 +151,16 @@ async function runDueTasks(): Promise<void> {
         }
 
         const text = result.text?.trim() || 'Task completed with no output.';
+
+        // [SILENT]: the agent finished but asked to stay quiet (polling task,
+        // nothing happened). Record the run, deliver nothing, skip session log
+        // and memory ingestion — there is nothing worth surfacing or recalling.
+        if (isSilentOutput(text)) {
+          updateTaskAfterRun(task.id, nextRun, '', 'success');
+          logger.info({ taskId: task.id, nextRun }, 'Task complete (silent), next run scheduled');
+          return;
+        }
+
         const acceptancePassed = evaluateAcceptance(task.acceptance_check, result.text ?? '');
         const lastStatus: 'success' | 'failed' = acceptancePassed ? 'success' : 'failed';
         const resultText = acceptancePassed
