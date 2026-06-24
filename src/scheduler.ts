@@ -2,7 +2,7 @@ import { spawnSync } from 'child_process';
 
 import { CronExpressionParser } from 'cron-parser';
 
-import { AGENT_ID, ALLOWED_CHAT_ID, agentMcpAllowlist, agentDefaultModel } from './config.js';
+import { AGENT_ID, ALLOWED_CHAT_ID, DEFAULT_TIMEZONE, agentMcpAllowlist, agentDefaultModel } from './config.js';
 import { ingestConversationTurn } from './memory-ingest.js';
 import {
   getDueTasks,
@@ -312,7 +312,10 @@ async function runDueMissionTasks(): Promise<void> {
   });
 }
 
-export function computeNextRun(cronExpression: string): number {
-  const interval = CronExpressionParser.parse(cronExpression);
+export function computeNextRun(
+  cronExpression: string,
+  timezone: string = DEFAULT_TIMEZONE,
+): number {
+  const interval = CronExpressionParser.parse(cronExpression, { tz: timezone });
   return Math.floor(interval.next().getTime() / 1000);
 }

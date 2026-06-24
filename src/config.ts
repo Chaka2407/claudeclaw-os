@@ -44,6 +44,7 @@ const envConfig = readEnvFile([
   'OPENROUTER_API_KEY',
   'OPENROUTER_MODEL',
   'CLAUDECLAW_STORE_DIR',
+  'CLAUDECLAW_TIMEZONE',
 ]);
 
 // ── Multi-agent support ──────────────────────────────────────────────
@@ -100,6 +101,13 @@ export const TELEGRAM_BOT_TOKEN =
 // Only respond to this Telegram chat ID. Set this after getting your ID via /chatid.
 export const ALLOWED_CHAT_ID =
   process.env.ALLOWED_CHAT_ID || envConfig.ALLOWED_CHAT_ID || '';
+
+// IANA timezone used to interpret scheduled-task cron expressions. Without this,
+// cron-parser defaults to UTC, so "0 7 * * *" fires at 7am UTC (3am EST) instead
+// of 7am local. Set CLAUDECLAW_TIMEZONE in .env (e.g. America/New_York) so all
+// scheduled tasks run on local wall-clock time, DST included.
+export const DEFAULT_TIMEZONE =
+  process.env.CLAUDECLAW_TIMEZONE || envConfig.CLAUDECLAW_TIMEZONE || 'UTC';
 
 export const WHATSAPP_ENABLED =
   (process.env.WHATSAPP_ENABLED || envConfig.WHATSAPP_ENABLED || '').toLowerCase() === 'true';
